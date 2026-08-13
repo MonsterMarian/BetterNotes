@@ -13,13 +13,29 @@
  * uživatele k jeho vlastním řádkům.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getPrefs, normalizeSupabaseUrl, setPrefs } from "./prefs";
 
-export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+export const BUILD_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
-/** Bez vyplněných údajů se odesílání v appce vůbec nenabízí. */
+/**
+ * Adresa projektu. Přednost má to, co je zadané v Nastavení - adresa
+ * z buildu je jen výchozí hodnota, aby ji uživatel nemusel opisovat,
+ * když ji build zná.
+ */
+export function supabaseUrl(): string {
+  return getPrefs().supabaseUrl || BUILD_SUPABASE_URL;
+}
+
+/** Klíč je vždycky z buildu: dlouhý JWT se na telefonu opisovat nedá. */
 export function isSupabaseConfigured(): boolean {
-  return SUPABASE_URL.length > 0 && SUPABASE_ANON_KEY.length > 0;
+  return supabaseUrl().length > 0 && SUPABASE_ANON_KEY.length > 0;
+}
+
+/** Zadaná adresa se uloží a zahodí se klient postavený nad tou starou. */
+export function setSupabaseUrl(raw: string): void {
+  setPrefs({ supabaseUrl: normalizeSupabaseUrl(raw) });
+  client = null;
 }
 
 export const NOTES_TABLE = "notes_outbox";
@@ -36,7 +52,7 @@ let client: SupabaseClient | null = null;
  */
 export function supabase(): SupabaseClient {
   if (!client) {
-    client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    client = createClient(supabaseUrl(), SUPABASE_ANON_KEY, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,

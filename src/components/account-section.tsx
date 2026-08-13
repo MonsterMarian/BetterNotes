@@ -8,8 +8,49 @@ import { usePrefs } from "@/components/providers/use-prefs";
 import { useToast } from "@/components/providers/toast-provider";
 import { setPrefs } from "@/lib/prefs";
 import { currentAccount, pendingCount, signIn, signOut, signUp, type Account } from "@/lib/sync";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { isSupabaseConfigured, setSupabaseUrl, SUPABASE_ANON_KEY } from "@/lib/supabase";
 import { plural } from "@/lib/utils";
+
+/**
+ * Adresa Supabase projektu.
+ *
+ * Ukazuje se jen dokud adresa není známá - typicky když ji build nedostal.
+ * Bez tohohle pole by uživatel v Nastavení jen četl, že nic není nastavené,
+ * a čekal na nový balík; adresa je krátká, takže se dá opsat i na telefonu.
+ */
+function ProjectUrlField({ onSaved }: { onSaved: () => void }) {
+  const [url, setUrl] = React.useState("");
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <Field
+        label="Adresa Supabase projektu"
+        hint="Najdeš ji v adresním řádku dashboardu: supabase.com/dashboard/project/abcdefgh → adresa je abcdefgh.supabase.co"
+      >
+        <Input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="abcdefgh.supabase.co"
+          inputMode="url"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      </Field>
+      <Button
+        size="sm"
+        className="self-start bg-progress text-progress-foreground hover:bg-progress/90"
+        disabled={!url.trim()}
+        onClick={() => {
+          setSupabaseUrl(url);
+          onSaved();
+        }}
+      >
+        Uložit
+      </Button>
+    </div>
+  );
+}
 
 /**
  * Přihlášení k odesílání poznámek do počítače.
@@ -25,6 +66,9 @@ export function AccountSection() {
   const [account, setAccount] = React.useState<Account | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [pending, setPending] = React.useState<number | null>(null);
+  // Zjišťuje se až v efektu: adresa bydlí v localStorage, který při
+  // předgenerování stránky neexistuje.
+  const [configured, setConfigured] = React.useState(false);
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -32,6 +76,14 @@ export function AccountSection() {
   const [error, setError] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
+    // Bez adresy se na klienta nesmí sáhnout - `createClient` s prázdnou
+    // adresou spadne a shodil by celé Nastavení.
+    if (!isSupabaseConfigured()) {
+      setConfigured(false);
+      setLoading(false);
+      return;
+    }
+    setConfigured(true);
     const acc = await currentAccount();
     setAccount(acc);
     setPending(acc ? await pendingCount() : null);
@@ -42,16 +94,18 @@ export function AccountSection() {
     void refresh();
   }, [refresh]);
 
-  if (!isSupabaseConfigured()) {
+  if (!SUPABASE_ANON_KEY) {
     return (
       <p className="text-xs text-muted-foreground">
-        Odesílání není v týhle verzi nastavené - build neměl vyplněné údaje
-        k databázi. Postup je v README, sekce „Odeslání do počítače".
+        Tahle verze appky nemá klíč k databázi - musí se vypéct do buildu.
+        Postup je v README, sekce „Odeslání do počítače".
       </p>
     );
   }
 
   if (loading) return <div className="h-16 animate-pulse rounded-lg bg-muted/40" />;
+
+  if (!configured) return <ProjectUrlField onSaved={() => void refresh()} />;
 
   const submit = async (mode: "in" | "up") => {
     setBusy(true);

@@ -22,13 +22,35 @@ export interface Prefs {
   order: SortOrder;
   /** Po odeslání poznámku rovnou uklidit do koše. */
   trashAfterSync: boolean;
+  /**
+   * Adresa Supabase projektu. Prázdné = použije se ta z buildu.
+   *
+   * Dá se přepsat v appce schválně: adresa zadrátovaná do buildu znamená, že
+   * bez nového balíku se k databázi nedá připojit vůbec - a než ten balík
+   * vznikne, uživatel v Nastavení kouká na hlášku a nemá co udělat.
+   * Je krátká, takže se dá na telefonu opsat; klíč zůstává v buildu, ten je
+   * dlouhý JWT.
+   */
+  supabaseUrl: string;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   view: "list",
   order: "updated",
   trashAfterSync: false,
+  supabaseUrl: "",
 };
+
+/**
+ * Uživatel adresu opisuje z dashboardu, takže sem chodí i "abcdefgh.supabase.co"
+ * nebo adresa s lomítkem na konci. Doplníme, co chybí - hádat formát není
+ * jeho práce.
+ */
+export function normalizeSupabaseUrl(raw: string): string {
+  const value = raw.trim().replace(/\/+$/, "");
+  if (!value) return "";
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
 
 export const PREFS_KEY = "betternotes:prefs";
 
@@ -53,6 +75,7 @@ export function parsePrefs(raw: unknown): Prefs {
     view: isView(r.view) ? r.view : DEFAULT_PREFS.view,
     order: isOrder(r.order) ? r.order : DEFAULT_PREFS.order,
     trashAfterSync: r.trashAfterSync === true,
+    supabaseUrl: typeof r.supabaseUrl === "string" ? normalizeSupabaseUrl(r.supabaseUrl) : "",
   };
 }
 
