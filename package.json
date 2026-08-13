@@ -13,10 +13,10 @@
     "ci:validate": "npm run type-check && npm run test",
     "android:assets": "node scripts/android-assets.mjs",
     "android:sync": "cap sync android",
-    "android:apk": "npm run build:web && npm run android:sync && node scripts/gradle.mjs assembleDebug",
-    "android:release": "npm run build:web && npm run android:sync && node scripts/gradle.mjs assembleRelease && npm run android:sign",
+    "android:apk": "npm run ota:bundle && npm run android:sync && node scripts/gradle.mjs assembleDebug",
+    "android:release": "npm run ota:bundle && npm run android:sync && node scripts/gradle.mjs assembleRelease && npm run android:sign",
     "android:sign": "node scripts/sign-apk.mjs",
-    "build:web": "node scripts/build-web.mjs"
+    "ota:bundle": "node scripts/release.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",

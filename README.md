@@ -12,6 +12,8 @@ poznámek do počítače — bez něj appka funguje celá.
 - **Hledání** — bez diakritiky a přes víc slov naráz: `mleko vikend` najde
   poznámku, která má „víkend" v názvu a „mléko" v textu.
 - **Koš** — smazaná poznámka jde nejdřív do koše, vysypat se musí ručně.
+- **Živé aktualizace** — appka si nové verze stahuje sama, bez přeinstalace
+  APK (viz [ANDROID.md](ANDROID.md)).
 - **Záloha** — celý zápisník včetně fotek do jednoho JSON souboru a zpátky.
 - **Odeslání do počítače** — volitelné, pro chvíli, kdy se s poznámkou má
   pracovat dál na velké klávesnici. Viz níž.
@@ -128,6 +130,7 @@ npm test
 | `src/lib/images.ts` | fotky: foťák, zmenšení, úložiště (telefon i prohlížeč) |
 | `src/lib/sync.ts` | odeslání poznámky do počítače |
 | `src/lib/backup.ts` | záloha a obnova včetně fotek |
+| `src/lib/live-update.ts` | živé aktualizace bez přeinstalace |
 | `src/components/notes/` | seznam, karta, detail, koš |
 | `src/lib/supabase.ts` | připojení k databázi a překlad chybových hlášek |
 | `supabase/schema.sql` | tabulka fronty, RLS policy a bucket na fotky |
