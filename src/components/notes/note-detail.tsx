@@ -126,7 +126,7 @@ export function NoteDetail({ noteId }: { noteId: string }) {
     }
     void winFeedback();
     toast({
-      tone: "win",
+      tone: "success",
       title: "Odesláno do počítače",
       description: res.images > 0 ? `Včetně ${res.images} fotek.` : undefined,
     });
@@ -181,7 +181,7 @@ export function NoteDetail({ noteId }: { noteId: string }) {
               togglePin(note.id);
             }}
           >
-            {note.pinned ? <PinOff className="text-win" /> : <Pin />}
+            {note.pinned ? <PinOff className="text-mark" /> : <Pin />}
           </Button>
           <Button
             variant="ghost"

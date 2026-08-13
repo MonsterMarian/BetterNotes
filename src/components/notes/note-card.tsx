@@ -36,7 +36,7 @@ export function NoteCard({ note, dense = false }: { note: Note; dense?: boolean 
         <h3 className={cn("min-w-0 flex-1 font-medium leading-snug", dense ? "text-sm" : "text-[0.95rem]")}>
           <span className="line-clamp-2 break-words">{title}</span>
         </h3>
-        {note.pinned ? <Pin className="mt-0.5 size-3.5 shrink-0 fill-win text-win" /> : null}
+        {note.pinned ? <Pin className="mt-0.5 size-3.5 shrink-0 fill-mark text-mark" /> : null}
       </div>
 
       {excerpt ? (

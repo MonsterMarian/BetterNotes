@@ -131,7 +131,7 @@ export function AccountSection() {
 
     setPassword("");
     void refresh();
-    toast({ tone: "win", title: "Přihlášeno" });
+    toast({ tone: "success", title: "Přihlášeno" });
   };
 
   if (account) {

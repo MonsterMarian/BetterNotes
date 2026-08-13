@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Trophy, Info, AlertTriangle, X } from "lucide-react";
+import { CheckCircle2, Info, AlertTriangle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type ToastTone = "win" | "info" | "warn";
+/** `success` nese barvu appky (zelenou), ne jantar - ten tu nic neznamená. */
+type ToastTone = "success" | "info" | "warn";
 
 interface Toast {
   id: number;
@@ -25,7 +26,7 @@ export function useToast(): ToastApi {
   return ctx;
 }
 
-const TONE_ICON = { win: Trophy, info: Info, warn: AlertTriangle } as const;
+const TONE_ICON = { success: CheckCircle2, info: Info, warn: AlertTriangle } as const;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<Toast[]>([]);
@@ -39,7 +40,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (t: Omit<Toast, "id">) => {
       const id = nextId.current++;
       setToasts((prev) => [...prev, { ...t, id }]);
-      window.setTimeout(() => dismiss(id), t.tone === "win" ? 6000 : 4000);
+      window.setTimeout(() => dismiss(id), t.tone === "success" ? 6000 : 4000);
     },
     [dismiss],
   );
@@ -62,8 +63,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               key={t.id}
               className={cn(
                 "animate-in-up pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-lg border p-3 shadow-lg",
-                t.tone === "win"
-                  ? "border-win/40 bg-win-muted text-win-muted-foreground"
+                t.tone === "success"
+                  ? "border-progress/40 bg-progress-muted text-progress-muted-foreground"
                   : "bg-card text-card-foreground",
               )}
             >

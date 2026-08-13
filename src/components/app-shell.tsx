@@ -42,7 +42,12 @@ function useNativeShell() {
     // Nejdřív nasadit balík stažený minule, teprve pak koukat po novém.
     // Když se nasadilo, WebView se překresluje a kontrola nemá smysl.
     void applyPendingUpdate().then((res) => {
-      if (!res.applied) void checkForUpdate();
+      if (res.applied) return;
+      // Chyba se schválně nezahazuje. Nasazení, které tiše selže, je horší
+      // než žádné: appka běží dál ze staré verze a tváří se, že je aktuální.
+      // Do konzole i do Nastavení, ať se dá zjistit proč.
+      if (res.error) console.error("Nasazení aktualizace selhalo:", res.error);
+      void checkForUpdate();
     });
   }, []);
 

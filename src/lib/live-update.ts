@@ -23,6 +23,15 @@ const URL_KEY = "betternotes:ota:url";
 const CURRENT_KEY = "betternotes:ota:current";
 const PENDING_KEY = "betternotes:ota:pending";
 const BOOTING_KEY = "betternotes:ota:booting";
+/**
+ * Proč naposledy selhalo nasazení.
+ *
+ * Bez tohohle záznamu je neúspěšné nasazení neviditelné: balík se stáhne,
+ * appka po restartu běží dál ze staré verze a kontrola aktualizací navíc
+ * hlásí "máš nejnovější verzi", protože stažená verze sedí s manifestem.
+ * Uživatel pak vidí appku, která tvrdí, že je aktuální, a přitom není.
+ */
+const ERROR_KEY = "betternotes:ota:error";
 
 /** Soubory balíku: cesta -> obsah. Bundle je čistě textový (js, css, html). */
 export interface BundleFile {
@@ -102,6 +111,11 @@ export function pendingBundleVersion(): string | null {
   } catch {
     return null;
   }
+}
+
+/** Proč naposledy selhalo nasazení, nebo `null`, když je vše v pořádku. */
+export function lastApplyError(): string | null {
+  return read(ERROR_KEY);
 }
 
 /*
@@ -220,6 +234,7 @@ export async function applyPendingUpdate(): Promise<ApplyResult> {
       write(CURRENT_KEY, target);
       write(PENDING_KEY, null);
       write(BOOTING_KEY, null);
+      write(ERROR_KEY, null);
       return { applied: null };
     }
 
@@ -253,11 +268,14 @@ export async function applyPendingUpdate(): Promise<ApplyResult> {
       }
     }, 400);
 
+    write(ERROR_KEY, null);
     return { applied: target };
   } catch (e) {
     // Pending schválně nemažeme: balík je stažený, chyba může být dočasná
     // a uživatel to má moct zkusit znovu.
-    return { applied: null, error: String(e).slice(0, 200) };
+    const message = String(e).slice(0, 200);
+    write(ERROR_KEY, message);
+    return { applied: null, error: message };
   }
 }
 
@@ -292,6 +310,12 @@ async function fetchManifest(url: string): Promise<UpdateManifest> {
 export type UpdateCheck =
   | { kind: "disabled" }
   | { kind: "up-to-date"; version: string | null }
+  /**
+   * Novější verze je stažená, ale běží se pořád ze staré. Musí to být vlastní
+   * výsledek, ne "up-to-date": stažená a nasazená verze nejsou totéž a appka,
+   * která v takovém stavu hlásí "máš nejnovější verzi", uživateli lže.
+   */
+  | { kind: "pending"; version: string; error: string | null }
   | { kind: "downloaded"; version: string; notes?: string }
   | { kind: "failed"; message: string };
 
@@ -314,8 +338,13 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
     }
 
     const current = currentBundleVersion();
-    if (manifest.version === current || manifest.version === pendingBundleVersion()) {
-      return { kind: "up-to-date", version: current };
+    if (manifest.version === current) return { kind: "up-to-date", version: current };
+
+    // Stažené už to je, jen se to nenasadilo. Typicky proto, že se od stažení
+    // appka nerestartovala - ale taky proto, že nasazení spadlo. V obou
+    // případech se nesmí tvrdit, že je vše aktuální.
+    if (manifest.version === pendingBundleVersion()) {
+      return { kind: "pending", version: manifest.version, error: lastApplyError() };
     }
 
     // Relativní jméno balíku se skládá vůči raw, ne vůči adrese manifestu -

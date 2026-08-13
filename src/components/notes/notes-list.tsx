@@ -157,7 +157,7 @@ export function NotesList() {
                 className={cn(
                   "shrink-0 rounded-full border px-3 py-1 text-xs transition-colors",
                   active
-                    ? "border-transparent bg-win text-win-foreground"
+                    ? "border-transparent bg-mark text-mark-foreground"
                     : "text-muted-foreground hover:bg-accent",
                 )}
               >

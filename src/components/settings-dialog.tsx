@@ -10,8 +10,10 @@ import { useToast } from "@/components/providers/toast-provider";
 import { applySettings, exportBackup, pickBackupFile, restoreBackup } from "@/lib/backup";
 import { applyTheme, currentTheme, type Theme } from "@/lib/prefs";
 import {
+  applyPendingUpdate,
   checkForUpdate,
   currentBundleVersion,
+  lastApplyError,
   pendingBundleVersion,
   revertToBundled,
 } from "@/lib/live-update";
@@ -70,25 +72,38 @@ function ThemeToggle() {
 function UpdateSection() {
   const { toast } = useToast();
   const [checking, setChecking] = React.useState(false);
+  const [applying, setApplying] = React.useState(false);
   const [current, setCurrent] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
+  const refresh = React.useCallback(() => {
     setCurrent(currentBundleVersion());
     setPending(pendingBundleVersion());
+    setError(lastApplyError());
   }, []);
+
+  React.useEffect(refresh, [refresh]);
 
   const check = async () => {
     setChecking(true);
     const res = await checkForUpdate();
     setChecking(false);
-    setPending(pendingBundleVersion());
+    refresh();
 
     if (res.kind === "downloaded") {
       toast({
-        tone: "win",
+        tone: "success",
         title: `Stažena verze ${res.version}`,
         description: "Nasadí se při dalším otevření appky.",
+      });
+    } else if (res.kind === "pending") {
+      toast({
+        tone: "warn",
+        title: `Verze ${res.version} čeká na nasazení`,
+        description: res.error
+          ? `Minule to selhalo: ${res.error}`
+          : "Zavři a znovu otevři appku, nebo ťukni na Nasadit teď.",
       });
     } else if (res.kind === "up-to-date") {
       toast({ tone: "info", title: "Máš nejnovější verzi." });
@@ -97,30 +112,65 @@ function UpdateSection() {
     }
   };
 
+  /**
+   * Ruční nasazení. Normálně se nasazuje samo po startu, ale když to selže,
+   * musí jít zkusit znovu bez vypínání appky - a hlavně musí být vidět proč.
+   */
+  const apply = async () => {
+    setApplying(true);
+    const res = await applyPendingUpdate();
+    setApplying(false);
+    refresh();
+
+    if (res.applied) return; // appka se překresluje, hláška by nebyla k čemu
+    toast({
+      tone: "warn",
+      title: "Nasazení se nepovedlo",
+      description: res.error ?? "Nebylo co nasadit.",
+    });
+  };
+
   return (
     <Section title="Aktualizace">
       <p className="text-xs text-muted-foreground">
-        Verze <span className="tabular">{current ?? "—"}</span>
+        Běží verze <span className="tabular">{current ?? "—"}</span>
         {pending ? (
           <>
-            {" · "}připravena <span className="tabular">{pending}</span>, nasadí se po restartu
+            {" · "}stažená <span className="tabular">{pending}</span> čeká na nasazení
           </>
         ) : null}
       </p>
-      <div className="flex gap-2">
+
+      {error ? (
+        <p className="text-xs text-destructive">Poslední nasazení selhalo: {error}</p>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2">
         <Button variant="secondary" size="sm" className="flex-1" disabled={checking} onClick={() => void check()}>
           <RefreshCw className={cn(checking && "animate-spin")} />
           {checking ? "Hledám…" : "Zkontrolovat"}
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Vrátí verzi zabalenou v APK - záchrana, když se stažená verze chová divně."
-          onClick={() => void revertToBundled()}
-        >
-          Zpět na verzi z APK
-        </Button>
+        {pending ? (
+          <Button
+            size="sm"
+            className="bg-progress text-progress-foreground hover:bg-progress/90"
+            disabled={applying}
+            onClick={() => void apply()}
+          >
+            {applying ? "Nasazuji…" : "Nasadit teď"}
+          </Button>
+        ) : null}
       </div>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        className="self-start"
+        title="Vrátí verzi zabalenou v APK - záchrana, když se stažená verze chová divně."
+        onClick={() => void revertToBundled()}
+      >
+        Zpět na verzi z APK
+      </Button>
     </Section>
   );
 }
@@ -159,7 +209,7 @@ export function SettingsDialog({
       replace(res.state);
       applySettings(res.settings);
       toast({
-        tone: "win",
+        tone: "success",
         title: "Záloha načtena",
         description: `${res.state.notes.length} ${plural(res.state.notes.length, "poznámka", "poznámky", "poznámek")}, ${res.images} ${plural(res.images, "fotka", "fotky", "fotek")}.`,
       });

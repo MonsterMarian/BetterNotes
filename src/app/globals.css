@@ -26,10 +26,10 @@
   --ring: oklch(0.705 0.015 286.067);
 
   /* Jantar zvýrazňuje připnuté poznámky a štítky - nic víc. */
-  --win: oklch(0.72 0.16 62);
-  --win-foreground: oklch(0.99 0 0);
-  --win-muted: oklch(0.96 0.035 75);
-  --win-muted-foreground: oklch(0.46 0.11 55);
+  --mark: oklch(0.72 0.16 62);
+  --mark-foreground: oklch(0.99 0 0);
+  --mark-muted: oklch(0.96 0.035 75);
+  --mark-muted-foreground: oklch(0.46 0.11 55);
 
   /*
    * Barva appky: zelená. Nese hlavní akci (nová poznámka, uložit, odeslat)
@@ -65,10 +65,10 @@
   --input: oklch(1 0 0 / 16%);
   --ring: oklch(0.552 0.016 285.938);
 
-  --win: oklch(0.78 0.15 68);
-  --win-foreground: oklch(0.17 0.02 60);
-  --win-muted: oklch(0.32 0.06 66);
-  --win-muted-foreground: oklch(0.88 0.09 75);
+  --mark: oklch(0.78 0.15 68);
+  --mark-foreground: oklch(0.17 0.02 60);
+  --mark-muted: oklch(0.32 0.06 66);
+  --mark-muted-foreground: oklch(0.88 0.09 75);
 
   --progress: oklch(0.82 0.2 145);
   --progress-foreground: oklch(0.17 0.04 145);
@@ -98,10 +98,10 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --color-win: var(--win);
-  --color-win-foreground: var(--win-foreground);
-  --color-win-muted: var(--win-muted);
-  --color-win-muted-foreground: var(--win-muted-foreground);
+  --color-mark: var(--mark);
+  --color-mark-foreground: var(--mark-foreground);
+  --color-mark-muted: var(--mark-muted);
+  --color-mark-muted-foreground: var(--mark-muted-foreground);
 
   --color-progress: var(--progress);
   --color-progress-foreground: var(--progress-foreground);
