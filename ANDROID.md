@@ -36,7 +36,8 @@ a build si na to sáhne sám.
 npm run android:release
 ```
 
-Výsledek: podepsané `../BetterNotes.apk` (vedle složky projektu).
+Výsledek: podepsané `BetterNotes.apk` v kořeni projektu. Verzuje se, takže
+si ho jde stáhnout rovnou z GitHubu do telefonu.
 
 Debug verze (`npm run android:apk`) je označená jako `debuggable` a řada
 telefonů — hlavně Xiaomi, Samsung a cokoli s Play Protect — ji odmítne
@@ -48,7 +49,7 @@ přes kabel, ne na normální používání.
 Přes kabel, když je v telefonu zapnuté ladění USB:
 
 ```bash
-C:\Android\sdk\platform-tools\adb.exe install -r ../BetterNotes.apk
+C:\Android\sdk\platform-tools\adb.exe install -r BetterNotes.apk
 ```
 
 Bez kabelu: APK zkopíruj do telefonu (kabel, Disk, e-mail) a otevři ho tam.
@@ -116,7 +117,7 @@ npm run android:release
 ```
 
 Postaví balík i APK z jednoho buildu (takže mají stejnou verzi) a rovnou APK
-podepíše do `../BetterNotes.apk`. Nutné jen při zásahu do nativní části.
+podepíše do `BetterNotes.apk`. Nutné jen při zásahu do nativní části.
 
 Samotné podepsání jde spustit i zvlášť: `npm run android:sign`. Schémata v1+v2+v3,
 v4 vypnuté — to používá jen `adb install --incremental` a nechává po sobě

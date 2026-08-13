@@ -45,7 +45,13 @@ v appce do **Nastavení → Adresa počítače**. Poznámky pak přistávají ve
 Telefon i počítač musí být na stejné Wi-Fi. Je to jednosměrné — nic se
 nesynchronizuje zpátky.
 
-## Sestavení APK
+## Instalace do telefonu
+
+Hotové podepsané APK leží přímo v repozitáři: **[BetterNotes.apk](BetterNotes.apk)**.
+Stáhni ho do telefonu a otevři — Android se jednorázově zeptá na povolení
+instalovat z toho zdroje.
+
+Vlastní sestavení:
 
 ```bash
 npm run android:release

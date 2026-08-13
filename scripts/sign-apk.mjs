@@ -6,7 +6,8 @@
  * jen `adb install --incremental` a jinak po sobě nechává soubor .apk.idsig.
  *
  * Spuštění: npm run android:sign
- * Výstup:   ../BetterNotes.apk (vedle složky projektu)
+ * Výstup:   BetterNotes.apk v kořeni projektu - odtud se verzuje, aby si ho
+ *           šlo stáhnout rovnou z GitHubu do telefonu.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -19,7 +20,7 @@ const ENV = javaEnv();
 
 const SDK = process.env.ANDROID_HOME ?? "C:/Android/sdk";
 const APK_IN = "android/app/build/outputs/apk/release/app-release.apk";
-const APK_OUT = process.argv[2] ?? "../BetterNotes.apk";
+const APK_OUT = process.argv[2] ?? "BetterNotes.apk";
 
 if (!existsSync(APK_IN)) {
   console.error(`Chybí ${APK_IN} - spusť nejdřív npm run android:release.`);
