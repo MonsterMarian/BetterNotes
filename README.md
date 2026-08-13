@@ -1,7 +1,8 @@
 # BetterNotes
 
-Zápisník na Android, ve kterém poznámky zůstávají v telefonu. Žádný účet,
-žádný cloud, funguje v letadle.
+Zápisník na Android, ve kterém poznámky zůstávají v telefonu. Funguje offline,
+v letadle i bez signálu. Účet je potřeba jedině pro volitelné odesílání
+poznámek do počítače — bez něj appka funguje celá.
 
 ## Co umí
 
@@ -17,7 +18,8 @@ Zápisník na Android, ve kterém poznámky zůstávají v telefonu. Žádný ú
 - **Živé aktualizace** — appka si nové verze stahuje sama, bez přeinstalace
   APK (viz [ANDROID.md](ANDROID.md)).
 
-Data leží v `localStorage`, fotky v souborech telefonu. Nikam se neposílají.
+Data leží v `localStorage`, fotky v souborech telefonu. Ven jde jen to, co sám
+odešleš do počítače.
 
 ## Spuštění pro vývoj
 
@@ -32,35 +34,63 @@ kromě nativních drobností (vibrace, splash, tlačítko Zpět).
 
 ## Odeslání do počítače
 
-Na počítači se spustí přijímací server:
+Volitelné. Poznámka jde z telefonu do databáze a počítač si ji odtud vyzvedne:
 
-```bash
-node tools/sync-server.mjs
+```
+telefon  →  Supabase (databáze + úložiště fotek)  →  počítač
 ```
 
-Vypíše adresu, na které je vidět z telefonu (něco jako `10.0.1.134:4545`).
-Tu stačí opsat v appce do **Nastavení → Adresa počítače** — schéma ani cestu
-doplňovat netřeba, appka si je dodá sama. Poznámky pak přistávají ve složce
-`prijate-poznamky/` jako `poznamka.md` plus fotky.
+Telefon a počítač se tedy nemusí vidět. Funguje to i na mobilních datech, i
+když je počítač zrovna vypnutý, a nezajímá to firewall ani jakou má počítač
+adresu — obě strany jen samy volají ven. Poznámka počká ve frontě, dokud si ji
+počítač nestáhne.
 
-Žádná databáze v tom není: telefon pošle jeden HTTP požadavek, server zapíše
-soubory na disk. Je to jednosměrné — nic se nesynchronizuje zpátky.
+Je to jednosměrné: nic se nesynchronizuje zpátky a zápisník v telefonu zůstává
+zdrojem pravdy.
 
-**Když se telefon nedovolá**, projdi tohle popořadě:
+### Nastavení (jednou)
 
-1. **Stejná Wi-Fi?** Telefon nesmí být na mobilních datech ani na jiné síti.
-   Na oddělené síti pro hosty to taky nepůjde.
-2. **Firewall.** Windows blokuje příchozí spojení na `node.exe`, dokud pro něj
-   nemá pravidlo. Server naběhne normálně, takže nic nenapovídá — z telefonu
-   to vypadá jako špatná adresa. Jednorázově v PowerShellu **jako správce**:
+1. **Založ projekt** na [supabase.com](https://supabase.com) — stačí free tier.
 
-   ```powershell
-   New-NetFirewallRule -DisplayName "BetterNotes sync" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 4545 -Profile Domain,Private
+2. **Vytvoř tabulku a úložiště.** V Supabase otevři *SQL Editor → New query*,
+   vlož obsah [`supabase/schema.sql`](supabase/schema.sql) a spusť. Skript jde
+   pustit opakovaně, aniž by něco rozbil.
+
+3. **Vyplň údaje.** Zkopíruj `.env.local.example` jako `.env.local` a doplň
+   `NEXT_PUBLIC_SUPABASE_URL` a `NEXT_PUBLIC_SUPABASE_ANON_KEY` — najdeš je
+   v Supabase pod *Project Settings → Data API*. `.env.local` je mimo git.
+
+4. **Sestav appku s těmi údaji** a nainstaluj do telefonu:
+
+   ```bash
+   npm run android:release
    ```
 
-3. **Změněná adresa.** Přiděluje ji router přes DHCP, takže se po restartu
-   může posunout. Server ji při startu vždycky vypíše znovu; kdo to nechce
-   řešit, zamluví si na routeru pro počítač pevnou adresu.
+   Adresa a klíč se vypékají do buildu, ne do Nastavení — anon klíč je dlouhý
+   JWT a opisovat ho prstem do telefonu je trest.
+
+5. **Založ účet.** V telefonu *Nastavení → Odesílání do počítače* → e-mail,
+   heslo → **Založit účet**. Stejné údaje pak dopiš do `.env.local` jako
+   `BETTERNOTES_EMAIL` a `BETTERNOTES_PASSWORD`.
+
+   Podle toho účtu databáze pozná, čí poznámky jsou. Nic jiného je u sebe
+   nedrží — `anon` klíč je veřejný a sám o sobě nedává přístup k ničemu.
+
+### Používání
+
+V telefonu: otevřít poznámku → **Odeslat do počítače**.
+
+Na počítači:
+
+```bash
+node tools/sync-pull.mjs
+```
+
+Stáhne, co čeká, a skončí. S `--watch` zůstane běžet a ptá se každou minutu.
+Poznámky přistávají ve složce `prijate-poznamky/` jako `poznamka.md` plus fotky.
+
+Stažené se v databázi jen označí, nemažou se — kdyby zápis na disk selhal,
+poznámka zůstane ve frontě a příští běh ji zkusí znovu.
 
 ## Instalace do telefonu
 
@@ -102,4 +132,6 @@ npm test
 | `src/lib/backup.ts` | záloha a obnova včetně fotek |
 | `src/lib/live-update.ts` | živé aktualizace bez přeinstalace |
 | `src/components/notes/` | seznam, karta, detail, koš |
-| `tools/sync-server.mjs` | přijímací server pro počítač |
+| `src/lib/supabase.ts` | připojení k databázi a překlad chybových hlášek |
+| `supabase/schema.sql` | tabulka fronty, RLS policy a bucket na fotky |
+| `tools/sync-pull.mjs` | stahování poznámek do počítače |

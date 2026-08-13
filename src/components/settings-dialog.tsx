@@ -4,13 +4,11 @@ import * as React from "react";
 import { Download, Moon, RefreshCw, Sun, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input } from "@/components/ui/input";
+import { AccountSection } from "@/components/account-section";
 import { useStore } from "@/components/providers/store-provider";
-import { usePrefs } from "@/components/providers/use-prefs";
 import { useToast } from "@/components/providers/toast-provider";
 import { applySettings, exportBackup, pickBackupFile, restoreBackup } from "@/lib/backup";
-import { applyTheme, currentTheme, setPrefs, type Theme } from "@/lib/prefs";
-import { normalizeEndpoint } from "@/lib/sync";
+import { applyTheme, currentTheme, type Theme } from "@/lib/prefs";
 import {
   checkForUpdate,
   currentBundleVersion,
@@ -135,23 +133,11 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { state, replace } = useStore();
-  const { syncEndpoint, trashAfterSync } = usePrefs();
   const { toast } = useToast();
-  const [endpoint, setEndpoint] = React.useState(syncEndpoint);
   const [native, setNative] = React.useState(false);
   const [working, setWorking] = React.useState(false);
 
   React.useEffect(() => setNative(isNative()), []);
-  // Dialog se odmontovává, takže se pole při každém otevření srovná se stavem.
-  React.useEffect(() => {
-    if (open) setEndpoint(syncEndpoint);
-  }, [open, syncEndpoint]);
-
-  const saveEndpoint = () => {
-    const value = endpoint.trim() ? normalizeEndpoint(endpoint) : "";
-    setPrefs({ syncEndpoint: value });
-    setEndpoint(value);
-  };
 
   const doExport = async () => {
     setWorking(true);
@@ -199,36 +185,14 @@ export function SettingsDialog({
         </Section>
 
         <Section title="Odesílání do počítače">
-          <Field
-            label="Adresa počítače"
-            hint="Nech prázdné, když funkci nechceš. Server je pár řádků v tools/sync-server.mjs."
-          >
-            <Input
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              onBlur={saveEndpoint}
-              placeholder="192.168.1.10:4545"
-              inputMode="url"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </Field>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={trashAfterSync}
-              onChange={(e) => setPrefs({ trashAfterSync: e.target.checked })}
-              className="size-4 accent-[var(--progress)]"
-            />
-            Po odeslání dát poznámku do koše
-          </label>
+          <AccountSection />
         </Section>
 
         <Section title="Data">
           <p className="text-xs text-muted-foreground">
-            {count} {plural(count, "poznámka", "poznámky", "poznámek")} v telefonu. Nikam se
-            neposílají a nikde není účet - záloha je jediná pojistka.
+            {count} {plural(count, "poznámka", "poznámky", "poznámek")} v telefonu. Samy od sebe
+            nikam neodcházejí - ven jde jen to, co ručně odešleš do počítače. Odinstalace
+            appky je smaže, takže záloha je jediná pojistka.
           </p>
           <div className="flex gap-2">
             <Button

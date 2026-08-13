@@ -26,7 +26,8 @@ import { useToast } from "@/components/providers/toast-provider";
 import { capturePhoto, deleteImage } from "@/lib/images";
 import { isEmptyNote, noteTitle, normalizeTag } from "@/lib/notes";
 import { isNative, tapFeedback, winFeedback } from "@/lib/native";
-import { sendNote } from "@/lib/sync";
+import { currentAccount, sendNote } from "@/lib/sync";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { NOTE_TONES, type NoteTone } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +39,7 @@ function plainText(title: string, text: string): string {
 
 export function NoteDetail({ noteId }: { noteId: string }) {
   const { state, hydrated, update, togglePin, addTag, removeTag, trash } = useStore();
-  const { syncEndpoint, trashAfterSync } = usePrefs();
+  const { trashAfterSync } = usePrefs();
   const { toast } = useToast();
   const goUp = useGoUp();
 
@@ -48,6 +49,14 @@ export function NoteDetail({ noteId }: { noteId: string }) {
   const [busy, setBusy] = React.useState<"photo" | "send" | null>(null);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [tonesOpen, setTonesOpen] = React.useState(false);
+  // Tlačítko „Odeslat" se ukazuje jen přihlášenému. Nepřihlášenému by jen
+  // svítilo a po ťuknutí ho poslalo do Nastavení - to je horší než ho nemít.
+  const [canSend, setCanSend] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    void currentAccount().then((acc) => setCanSend(acc !== null));
+  }, []);
 
   /*
    * Prázdnou poznámku po odchodu uklidí seznam, ne tahle obrazovka.
@@ -109,7 +118,7 @@ export function NoteDetail({ noteId }: { noteId: string }) {
 
   const send = async () => {
     setBusy("send");
-    const res = await sendNote(note, syncEndpoint);
+    const res = await sendNote(note);
     setBusy(null);
     if (!res.ok) {
       toast({ tone: "warn", title: "Odeslání selhalo", description: res.message });
@@ -297,7 +306,7 @@ export function NoteDetail({ noteId }: { noteId: string }) {
         </Button>
       </div>
 
-      {syncEndpoint ? (
+      {canSend ? (
         <Button
           className="bg-progress text-progress-foreground hover:bg-progress/90"
           disabled={busy !== null || isEmptyNote(note)}

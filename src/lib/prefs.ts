@@ -20,11 +20,6 @@ export const LIST_VIEWS: { id: ListView; label: string; hint: string }[] = [
 export interface Prefs {
   view: ListView;
   order: SortOrder;
-  /**
-   * Adresa počítače, na který se posílají poznámky. Prázdné = funkce se
-   * nenabízí; je to volitelný doplněk, ne podmínka běhu appky.
-   */
-  syncEndpoint: string;
   /** Po odeslání poznámku rovnou uklidit do koše. */
   trashAfterSync: boolean;
 }
@@ -32,7 +27,6 @@ export interface Prefs {
 export const DEFAULT_PREFS: Prefs = {
   view: "list",
   order: "updated",
-  syncEndpoint: "",
   trashAfterSync: false,
 };
 
@@ -58,7 +52,6 @@ export function parsePrefs(raw: unknown): Prefs {
   return {
     view: isView(r.view) ? r.view : DEFAULT_PREFS.view,
     order: isOrder(r.order) ? r.order : DEFAULT_PREFS.order,
-    syncEndpoint: typeof r.syncEndpoint === "string" ? r.syncEndpoint.trim() : "",
     trashAfterSync: r.trashAfterSync === true,
   };
 }

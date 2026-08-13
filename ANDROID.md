@@ -11,7 +11,6 @@ hardwarové tlačítko Zpět, foťák a vibrace.
 | `capacitor.config.ts` | ID appky, jméno, barvy, chování splash screenu a lišt |
 | `android/` | nativní projekt (Gradle). Generuje ho Capacitor, ruční úpravy přežijí |
 | `android/app/src/main/res/` | ikony, splash, barvy a témata |
-| `android/app/src/main/res/xml/network_security_config.xml` | povolení HTTP kvůli odesílání do počítače |
 | `scripts/android-assets.mjs` | generátor ikon a splashe z jednoho SVG |
 | `src/lib/native.ts` | most do nativní vrstvy (haptika, lišta, splash, tlačítko Zpět) |
 | `out/` | statický export webu, který se do APK kopíruje |
@@ -68,16 +67,6 @@ musí dopsat — a od té chvíle si o něj bude muset appka za běhu říct sam
 `INTERNET` je v manifestu kvůli dvěma věcem: živým aktualizacím z GitHubu
 a odesílání poznámky do počítače. Bez sítě funguje appka celá, jen tyhle dvě
 věci nejdou.
-
-### Nešifrovaný provoz
-
-Odesílání do počítače míří na server, který si uživatel spustil doma —
-certifikát nemá a mít nebude. Android od API 28 takový provoz zakazuje, proto
-`network_security_config.xml` s `cleartextTrafficPermitted="true"`.
-
-Užší pravidlo nejde napsat: `<domain>` bere jen konkrétní adresy, ne rozsahy,
-a adresu počítače si uživatel píše sám. Na GitHub se chodí přes `https://`
-natvrdo v kódu, takže živé aktualizace tím nešifrované nebudou.
 
 ## Živé aktualizace (bez přeinstalace)
 
@@ -198,18 +187,47 @@ viz `src/lib/backup.ts`; načte i holý export stavu bez obálky.
 
 ## Odesílání do počítače
 
-Volitelná jednosměrná cesta ven, ne synchronizace. Žádná databáze: telefon
-pošle `multipart/form-data` na jeden endpoint a server zapíše soubory na disk.
-Server je `tools/sync-server.mjs` (holý Node, žádné závislosti), adresa se
-zadává v **Nastavení → Adresa počítače**.
+Volitelná jednosměrná cesta ven, ne synchronizace. Telefon zapíše poznámku do
+databáze v Supabase a počítač si ji odtud vyzvedne skriptem
+`tools/sync-pull.mjs`.
 
-Adresa se dorovnává (`src/lib/sync.ts`): `192.168.1.10:4545` se doplní na
-`http://192.168.1.10:4545/upload`, aby uživatel nehádal formát.
+Podstatné je, že **obě strany jen samy volají ven**. Nikdo nic neposlouchá,
+takže tomu firewall nemá co zakázat, nezáleží na tom, jakou má počítač adresu,
+a telefon s počítačem se nemusí vidět ani být na stejné síti. Poznámka počká
+ve frontě, dokud si ji počítač nestáhne — může to být za týden.
 
-Port je **4545**, ne 3000 — na 3000 běží `npm run dev` a servery by si sedly
-na stejné místo.
+Postup nastavení je v [README](README.md), sekce „Odeslání do počítače".
 
-Na Windows to poprvé skoro jistě neprojde kvůli firewallu: příchozí spojení na
-`node.exe` jsou blokovaná, dokud pro ně není pravidlo. Server přitom naběhne
-normálně, takže z jeho strany nic nenapovídá. Vypisuje proto při startu příkaz,
-kterým se pravidlo založí (chce to PowerShell jako správce).
+### Kudy tečou data
+
+| Kde | Co tam je |
+|---|---|
+| tabulka `notes_outbox` | fronta odeslaných poznámek: titulek, text, štítky, cesty k fotkám |
+| bucket `note-images` | samotné fotky, ve složce pojmenované po uživateli |
+| `pulled_at` | vyplní počítač, když si poznámku stáhne |
+
+Řádky se po stažení nemažou, jen označí. Kdyby zápis na disk selhal, poznámka
+zůstane ve frontě a příští běh ji zkusí znovu.
+
+Fotky nejdou do databáze, ale do úložiště — řádek by s nimi nabobtnal na
+megabajty a čtení fronty by se vleklo.
+
+### Čím jsou data chráněná
+
+`anon` klíč zabalený v APK je veřejný z definice: přečte si ho každý, kdo si
+APK rozbalí, a je to tak zamýšlené. Sám o sobě ale nedává přístup k ničemu.
+
+Data drží u sebe až RLS policy v `supabase/schema.sql`: bez přihlášení se
+nikdo nedostane nikam a přihlášený vidí jen řádky se svým `user_id`. Stejně
+tak fotky — policy porovnávají první část cesty s `auth.uid()`.
+
+Skutečné tajemství je jen heslo k účtu. To je v `.env.local`, které je mimo git.
+
+### Oprávnění a síť
+
+Appce stačí `INTERNET`. Nešifrovaný provoz povolený nemá a nepotřebuje:
+Supabase i GitHub jedou přes HTTPS.
+
+(Do commitu `eec7a29` tu byl `network_security_config.xml`, který HTTP
+povoloval — bylo to kvůli odesílání na server v místní síti. S Supabase odpadl
+a s ním i to povolení.)
