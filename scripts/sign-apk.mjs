@@ -11,6 +11,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { javaEnv } from "./jdk.mjs";
+
+// `apksigner.bat` je jen dávka kolem Javy a bez JAVA_HOME skončí dřív, než
+// cokoli udělá. Prostředí je stejné jako pro Gradle, viz `jdk.mjs`.
+const ENV = javaEnv();
 
 const SDK = process.env.ANDROID_HOME ?? "C:/Android/sdk";
 const APK_IN = "android/app/build/outputs/apk/release/app-release.apk";
@@ -59,7 +64,7 @@ const res = spawnSync(
     "--out", APK_OUT,
     APK_IN,
   ],
-  { stdio: "inherit", shell: true },
+  { stdio: "inherit", shell: true, env: ENV },
 );
 
 if (res.status !== 0) process.exit(res.status ?? 1);
@@ -67,7 +72,7 @@ if (res.status !== 0) process.exit(res.status ?? 1);
 const check = spawnSync(
   apksigner,
   ["verify", "--min-sdk-version", "21", "--verbose", APK_OUT],
-  { encoding: "utf8", shell: true },
+  { encoding: "utf8", shell: true, env: ENV },
 );
 const schemes = (check.stdout ?? "")
   .split("\n")

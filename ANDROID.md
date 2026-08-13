@@ -56,9 +56,13 @@ Android se zeptá na povolení instalovat z tohoto zdroje — jednorázově potv
 
 ## Oprávnění
 
-Appka si žádná oprávnění nevynucuje dopředu. Foťák a galerie si o svolení
-řeknou ve chvíli, kdy na ně uživatel poprvé ťukne — obojí zařizuje
-`@capacitor/camera` sám.
+V manifestu jsou jen `INTERNET` a `VIBRATE`. Foťák ani galerie nic nechtějí:
+`@capacitor/camera` schválně nedeklaruje `CAMERA` a fotí přes systémovou
+appku (`ACTION_IMAGE_CAPTURE`), takže snímek pořizuje ona a naší appce stačí
+hotový soubor. Uživatel tím pádem nevidí žádnou žádost o oprávnění.
+
+Kdyby v budoucnu bylo potřeba fotit uvnitř appky, `CAMERA` se do manifestu
+musí dopsat — a od té chvíle si o něj bude muset appka za běhu říct sama.
 
 `INTERNET` je v manifestu kvůli dvěma věcem: živým aktualizacím z GitHubu
 a odesílání poznámky do počítače. Bez sítě funguje appka celá, jen tyhle dvě
