@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android od API 28 nešifrovaný provoz zakazuje. Odesílání poznámky do
+  počítače ale míří na server, který si uživatel spustil doma na své Wi-Fi -
+  ten certifikát nemá a mít nebude. Bez tohohle povolení by funkce spadla
+  na "Počítač neodpověděl" a nešlo by poznat proč.
+
+  Proč plošně a ne jen pro domácí rozsah: `<domain>` bere jen konkrétní jména
+  a adresy, ne rozsahy ani masky. Adresu počítače si uživatel píše sám
+  (192.168.x.x, 10.x.x.x, jméno v místní síti), takže ji sem nejde předem
+  vypsat a užší pravidlo by funkci prostě vyplo.
+
+  Co to stojí: appka *smí* mluvit nešifrovaně kamkoli. Co to nestojí: appka
+  chodí jen na dvě místa - na adresu z Nastavení a na GitHub kvůli živým
+  aktualizacím. GitHub má v kódu natvrdo `https://`, takže ten přes
+  nešifrované spojení nepojede tak jako tak.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
