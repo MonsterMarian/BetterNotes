@@ -68,64 +68,32 @@ musí dopsat — a od té chvíle si o něj bude muset appka za běhu říct sam
 a odesílání poznámky do počítače. Bez sítě funguje appka celá, jen tyhle dvě
 věci nejdou.
 
-## Živé aktualizace (bez přeinstalace)
+## Aktualizace appky
 
-Appka je hromada statických souborů, které Capacitor servíruje z telefonu.
-Když se ty soubory vymění, po restartu běží nová verze — **bez instalace APK**.
+Novou verzi znamená nové APK. Appka běží výhradně z toho, co je v něm —
+nic si za běhu nestahuje a nevyměňuje.
 
-Co takhle projde: všechno v `src/` — funkce, opravy, texty, vzhled.
-Co neprojde: nativní část (nový plugin, oprávnění, ikona, `targetSdk`). Tam je
-potřeba nové APK, ale to je párkrát za rok.
+Dřív tu byly živé aktualizace: appka si z GitHubu tahala balík se statickými
+soubory a servírovala si ho místo těch z APK. Fungovalo to, dokud se nasazení
+povedlo, ale když ne, nebylo to poznat — appka běžela dál ze staré verze
+a tvářila se, že je aktuální. Cena za „nemusíš přeinstalovávat" byla celá
+třída chyb, které se špatně hledají, a u appky vydávané párkrát za rok se
+nevyplácí. Kód je v historii u commitu `f0f8322`, kdyby se to někdy hodilo.
 
-Adresa je zadrátovaná v `src/lib/live-update.ts` jako `DEFAULT_UPDATE_URL`,
-takže se nikde nic nenastavuje — appka se aktualizuje sama.
+### Zbytek po staré verzi
 
-### Vydání nové verze
+Capacitor si cestu, ze které servíruje soubory, ukládá **nativně**
+(`persistServerBasePath`), ne v localStorage. Telefon, který si někdy stáhl
+balík, si ji drží i po přeinstalaci APK — a nová verze by pak vůbec nenaběhla,
+protože WebView by pořád obsluhoval soubory ze starého balíku. Zvenčí to
+vypadá, jako by se instalace neprovedla.
 
-```bash
-npm run ota:bundle
-```
+Proto `useBundledFiles()` v `src/lib/native.ts` při startu jednou zkontroluje,
+odkud se servíruje, a když to není obsah APK, srovná to a překreslí. Když už
+appka běží z APK, nedělá se nic.
 
-Vyrobí `ota/bundle-<verze>.json` (celá appka v jednom souboru) a
-`ota/latest.json` (manifest). Pak stačí commit a push — appka si při startu
-stáhne manifest, porovná verzi a když je novější, stáhne balík a nasadí ho
-**při dalším otevření**.
-
-Nasazuje se schválně až při dalším startu: přepnutí za běhu by uživateli zmizela
-obrazovka pod rukama.
-
-**Číslo verze musí sedět mezi webem a manifestem.** `scripts/release.mjs` proto
-staví web sám a předává mu verzi přes `NEXT_PUBLIC_BUNDLE_VERSION` — kdyby se
-stavělo zvlášť, appka by po každé instalaci stahovala balík, který už v sobě má.
-Skript to na konci kontroluje a při nesouladu skončí chybou.
-
-### Nové APK
-
-```bash
-npm run android:release
-```
-
-Postaví balík i APK z jednoho buildu (takže mají stejnou verzi) a rovnou APK
-podepíše do `BetterNotes.apk`. Nutné jen při zásahu do nativní části.
-
-Samotné podepsání jde spustit i zvlášť: `npm run android:sign`. Schémata v1+v2+v3,
-v4 vypnuté — to používá jen `adb install --incremental` a nechává po sobě
-soubor `.apk.idsig`.
-
-### Když se něco pokazí
-
-**Nastavení → Aktualizace → Zpět na verzi z APK** zahodí stažené balíky.
-
-Pojistka běží i bez zásahu: krátký skript v `<head>` (viz `src/app/layout.tsx`)
-si při nasazení balíku poznamená, že se startuje. Když appka do deseti vteřin
-nenaběhne a značku nesmaže, skript se sám vrátí k verzi z APK. Je schválně mimo
-kód appky — rozbitý balík by ho jinak vůbec nespustil.
-
-### Data při aktualizaci
-
-Zůstávají. `localStorage` patří k adrese `localhost`, kterou výměna souborů
-nemění. Stejně tak přeinstalace APK přes existující appku data nemaže —
-maže je jen odinstalace.
+Data tím netrpí: poznámky patří k adrese `localhost`, kterou tahle změna
+nemění, a fotky leží v souborech appky.
 
 ## Změna ikony nebo splashe
 

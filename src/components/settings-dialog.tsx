@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Moon, RefreshCw, Sun, Upload } from "lucide-react";
+import { Download, Moon, Sun, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { AccountSection } from "@/components/account-section";
@@ -9,14 +9,6 @@ import { useStore } from "@/components/providers/store-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { applySettings, exportBackup, pickBackupFile, restoreBackup } from "@/lib/backup";
 import { applyTheme, currentTheme, type Theme } from "@/lib/prefs";
-import {
-  applyPendingUpdate,
-  checkForUpdate,
-  currentBundleVersion,
-  lastApplyError,
-  pendingBundleVersion,
-  revertToBundled,
-} from "@/lib/live-update";
 import { isNative, syncStatusBar } from "@/lib/native";
 import { noteCount } from "@/lib/notes";
 import { cn, plural } from "@/lib/utils";
@@ -68,110 +60,16 @@ function ThemeToggle() {
   );
 }
 
-/** Živé aktualizace. V prohlížeči nemá co nasazovat, takže se nezobrazí. */
-function UpdateSection() {
-  const { toast } = useToast();
-  const [checking, setChecking] = React.useState(false);
-  const [applying, setApplying] = React.useState(false);
-  const [current, setCurrent] = React.useState<string | null>(null);
-  const [pending, setPending] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const refresh = React.useCallback(() => {
-    setCurrent(currentBundleVersion());
-    setPending(pendingBundleVersion());
-    setError(lastApplyError());
-  }, []);
-
-  React.useEffect(refresh, [refresh]);
-
-  const check = async () => {
-    setChecking(true);
-    const res = await checkForUpdate();
-    setChecking(false);
-    refresh();
-
-    if (res.kind === "downloaded") {
-      toast({
-        tone: "success",
-        title: `Stažena verze ${res.version}`,
-        description: "Nasadí se při dalším otevření appky.",
-      });
-    } else if (res.kind === "pending") {
-      toast({
-        tone: "warn",
-        title: `Verze ${res.version} čeká na nasazení`,
-        description: res.error
-          ? `Minule to selhalo: ${res.error}`
-          : "Zavři a znovu otevři appku, nebo ťukni na Nasadit teď.",
-      });
-    } else if (res.kind === "up-to-date") {
-      toast({ tone: "info", title: "Máš nejnovější verzi." });
-    } else if (res.kind === "failed") {
-      toast({ tone: "warn", title: "Kontrola selhala", description: res.message });
-    }
-  };
-
-  /**
-   * Ruční nasazení. Normálně se nasazuje samo po startu, ale když to selže,
-   * musí jít zkusit znovu bez vypínání appky - a hlavně musí být vidět proč.
-   */
-  const apply = async () => {
-    setApplying(true);
-    const res = await applyPendingUpdate();
-    setApplying(false);
-    refresh();
-
-    if (res.applied) return; // appka se překresluje, hláška by nebyla k čemu
-    toast({
-      tone: "warn",
-      title: "Nasazení se nepovedlo",
-      description: res.error ?? "Nebylo co nasadit.",
-    });
-  };
-
+/**
+ * Verze appky. Je to jediné, co se o buildu vyplatí ukazovat - a hodí se to
+ * při hlášení chyby, aby bylo jasné, o kterou verzi jde.
+ */
+function VersionLine() {
   return (
-    <Section title="Aktualizace">
-      <p className="text-xs text-muted-foreground">
-        Běží verze <span className="tabular">{current ?? "—"}</span>
-        {pending ? (
-          <>
-            {" · "}stažená <span className="tabular">{pending}</span> čeká na nasazení
-          </>
-        ) : null}
-      </p>
-
-      {error ? (
-        <p className="text-xs text-destructive">Poslední nasazení selhalo: {error}</p>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" size="sm" className="flex-1" disabled={checking} onClick={() => void check()}>
-          <RefreshCw className={cn(checking && "animate-spin")} />
-          {checking ? "Hledám…" : "Zkontrolovat"}
-        </Button>
-        {pending ? (
-          <Button
-            size="sm"
-            className="bg-progress text-progress-foreground hover:bg-progress/90"
-            disabled={applying}
-            onClick={() => void apply()}
-          >
-            {applying ? "Nasazuji…" : "Nasadit teď"}
-          </Button>
-        ) : null}
-      </div>
-
-      <Button
-        variant="ghost"
-        size="sm"
-        className="self-start"
-        title="Vrátí verzi zabalenou v APK - záchrana, když se stažená verze chová divně."
-        onClick={() => void revertToBundled()}
-      >
-        Zpět na verzi z APK
-      </Button>
-    </Section>
+    <p className="border-t pt-4 text-xs text-muted-foreground">
+      Verze <span className="tabular">{process.env.NEXT_PUBLIC_BUNDLE_VERSION || "dev"}</span>.
+      Appka běží z toho, co je v APK - nová verze se instaluje novým APK.
+    </p>
   );
 }
 
@@ -271,7 +169,7 @@ export function SettingsDialog({
           </p>
         </Section>
 
-        {native ? <UpdateSection /> : null}
+        {native ? <VersionLine /> : null}
       </div>
     </Dialog>
   );

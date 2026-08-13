@@ -9,8 +9,13 @@ import { SettingsDialog } from "@/components/settings-dialog";
 import { useTrackNavigation } from "@/components/providers/use-app-back";
 import { useStore } from "@/components/providers/store-provider";
 import { trashedNotes } from "@/lib/notes";
-import { applyPendingUpdate, checkForUpdate, markBootSucceeded } from "@/lib/live-update";
-import { hideSplash, isNative, registerBackButton, syncStatusBar } from "@/lib/native";
+import {
+  hideSplash,
+  isNative,
+  registerBackButton,
+  syncStatusBar,
+  useBundledFiles,
+} from "@/lib/native";
 import { cn } from "@/lib/utils";
 
 /** Statický export přidává lomítko na konec ("/trash/"), porovnává se bez něj. */
@@ -22,8 +27,8 @@ function normalizePath(pathname: string): string {
 const ROOTS = ["/", "/trash"];
 
 /**
- * Nativní chování appky: schování splash screenu po prvním vykreslení,
- * živé aktualizace a hardwarové tlačítko Zpět. V prohlížeči se nespustí nic.
+ * Nativní chování appky: schování splash screenu po prvním vykreslení
+ * a hardwarové tlačítko Zpět. V prohlížeči se nespustí nic.
  */
 function useNativeShell() {
   const pathname = usePathname();
@@ -32,22 +37,16 @@ function useNativeShell() {
   atRoot.current = ROOTS.includes(normalizePath(pathname));
 
   React.useEffect(() => {
-    void hideSplash();
-    // Stavová lišta musí sednout na téma z localStorage - nasazuje ho skript
-    // v layoutu ještě před prvním paintem a nikdo jiný se o ni nestará.
-    void syncStatusBar(document.documentElement.classList.contains("dark"));
-    // Doběhli jsme sem, takže tenhle balík umí naběhnout - značka o rozjetém
-    // startu může pryč, jinak by ho příští spuštění vrátilo zpět.
-    markBootSucceeded();
-    // Nejdřív nasadit balík stažený minule, teprve pak koukat po novém.
-    // Když se nasadilo, WebView se překresluje a kontrola nemá smysl.
-    void applyPendingUpdate().then((res) => {
-      if (res.applied) return;
-      // Chyba se schválně nezahazuje. Nasazení, které tiše selže, je horší
-      // než žádné: appka běží dál ze staré verze a tváří se, že je aktuální.
-      // Do konzole i do Nastavení, ať se dá zjistit proč.
-      if (res.error) console.error("Nasazení aktualizace selhalo:", res.error);
-      void checkForUpdate();
+    // Nejdřív srovnat, odkud se appka servíruje. Když si dřívější verze
+    // stáhla balík, Capacitor si tu cestu drží nativně i po přeinstalaci
+    // APK - a nová verze by vůbec nenaběhla. Když se to srovnává, appka se
+    // překresluje a zbytek by stejně nedoběhl.
+    void useBundledFiles().then((reset) => {
+      if (reset) return;
+      void hideSplash();
+      // Stavová lišta musí sednout na téma z localStorage - nasazuje ho skript
+      // v layoutu ještě před prvním paintem a nikdo jiný se o ni nestará.
+      void syncStatusBar(document.documentElement.classList.contains("dark"));
     });
   }, []);
 
