@@ -17,14 +17,22 @@ import { createServer } from "node:http";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
 
-const PORT = Number(process.argv[2] ?? 3000);
+// 4545, ne 3000: na 3000 běží `npm run dev`, takže by si server s vývojovým
+// serverem sedl na stejný port a jeden z nich by nenaběhl.
+const PORT = Number(process.argv[2] ?? 4545);
 const SAVE_DIR = path.resolve("prijate-poznamky");
 
-/** Adresy, na kterých je počítač vidět z telefonu na stejné Wi-Fi. */
+/**
+ * Adresy, na kterých je počítač vidět z telefonu na stejné Wi-Fi.
+ *
+ * Bez `169.254.*`: to jsou APIPA adresy, které si Windows přidělí sám, když
+ * na adaptéru není DHCP - typicky u odpojených síťovek. Vypsat je znamená
+ * nabídnout uživateli k opsání adresu, na které nikdo neposlouchá.
+ */
 function localAddresses() {
   return Object.values(networkInterfaces())
     .flat()
-    .filter((n) => n && n.family === "IPv4" && !n.internal)
+    .filter((n) => n && n.family === "IPv4" && !n.internal && !n.address.startsWith("169.254."))
     .map((n) => n.address);
 }
 
@@ -144,11 +152,38 @@ const server = createServer(async (req, res) => {
   }
 });
 
+/**
+ * Windows Firewall blokuje příchozí spojení na node.exe, dokud pro něj
+ * neexistuje pravidlo. Server přitom naběhne úplně normálně, takže z jeho
+ * strany nic nenapovídá - a v telefonu to vypadá jako by byla špatně adresa.
+ *
+ * Proto se to řekne rovnou při startu. Pravidlo se nedá založit odsud,
+ * chce to příkazovou řádku spuštěnou jako správce.
+ */
+function firewallHint() {
+  if (process.platform !== "win32") return;
+  console.log("\nKdyby se telefon nedovolal, pustí node.exe přes firewall tenhle");
+  console.log("příkaz v PowerShellu spuštěném jako správce:");
+  console.log(
+    `  New-NetFirewallRule -DisplayName "BetterNotes sync" -Direction Inbound ` +
+      `-Action Allow -Protocol TCP -LocalPort ${PORT} -Profile Domain,Private`,
+  );
+}
+
 await mkdir(SAVE_DIR, { recursive: true });
 server.listen(PORT, "0.0.0.0", () => {
   console.log("BetterNotes — přijímací server běží.");
   console.log(`Poznámky se ukládají do: ${SAVE_DIR}`);
-  console.log("\nV appce zadej do Nastavení → Adresa počítače:");
-  for (const addr of localAddresses()) console.log(`  http://${addr}:${PORT}/upload`);
-  console.log("\nTelefon i počítač musí být na stejné Wi-Fi. Konec: Ctrl+C");
+
+  const addresses = localAddresses();
+  if (addresses.length === 0) {
+    console.log("\nPočítač nemá žádnou síťovou adresu - není připojený k Wi-Fi?");
+  } else {
+    console.log("\nV appce zadej do Nastavení → Adresa počítače:");
+    for (const addr of addresses) console.log(`  ${addr}:${PORT}`);
+  }
+
+  console.log("\nTelefon i počítač musí být na stejné Wi-Fi.");
+  firewallHint();
+  console.log("\nKonec: Ctrl+C");
 });

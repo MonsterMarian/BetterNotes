@@ -198,9 +198,18 @@ viz `src/lib/backup.ts`; načte i holý export stavu bez obálky.
 
 ## Odesílání do počítače
 
-Volitelná jednosměrná cesta ven, ne synchronizace. Server je
-`tools/sync-server.mjs` (holý Node, žádné závislosti), adresa se zadává
-v **Nastavení → Adresa počítače**.
+Volitelná jednosměrná cesta ven, ne synchronizace. Žádná databáze: telefon
+pošle `multipart/form-data` na jeden endpoint a server zapíše soubory na disk.
+Server je `tools/sync-server.mjs` (holý Node, žádné závislosti), adresa se
+zadává v **Nastavení → Adresa počítače**.
 
-Adresa se dorovnává (`src/lib/sync.ts`): `192.168.1.10:3000` se doplní na
-`http://192.168.1.10:3000/upload`, aby uživatel nehádal formát.
+Adresa se dorovnává (`src/lib/sync.ts`): `192.168.1.10:4545` se doplní na
+`http://192.168.1.10:4545/upload`, aby uživatel nehádal formát.
+
+Port je **4545**, ne 3000 — na 3000 běží `npm run dev` a servery by si sedly
+na stejné místo.
+
+Na Windows to poprvé skoro jistě neprojde kvůli firewallu: příchozí spojení na
+`node.exe` jsou blokovaná, dokud pro ně není pravidlo. Server přitom naběhne
+normálně, takže z jeho strany nic nenapovídá. Vypisuje proto při startu příkaz,
+kterým se pravidlo založí (chce to PowerShell jako správce).

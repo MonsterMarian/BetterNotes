@@ -38,12 +38,29 @@ Na počítači se spustí přijímací server:
 node tools/sync-server.mjs
 ```
 
-Vypíše adresy, na kterých je vidět z telefonu. Jednu z nich stačí zadat
-v appce do **Nastavení → Adresa počítače**. Poznámky pak přistávají ve složce
+Vypíše adresu, na které je vidět z telefonu (něco jako `10.0.1.134:4545`).
+Tu stačí opsat v appce do **Nastavení → Adresa počítače** — schéma ani cestu
+doplňovat netřeba, appka si je dodá sama. Poznámky pak přistávají ve složce
 `prijate-poznamky/` jako `poznamka.md` plus fotky.
 
-Telefon i počítač musí být na stejné Wi-Fi. Je to jednosměrné — nic se
-nesynchronizuje zpátky.
+Žádná databáze v tom není: telefon pošle jeden HTTP požadavek, server zapíše
+soubory na disk. Je to jednosměrné — nic se nesynchronizuje zpátky.
+
+**Když se telefon nedovolá**, projdi tohle popořadě:
+
+1. **Stejná Wi-Fi?** Telefon nesmí být na mobilních datech ani na jiné síti.
+   Na oddělené síti pro hosty to taky nepůjde.
+2. **Firewall.** Windows blokuje příchozí spojení na `node.exe`, dokud pro něj
+   nemá pravidlo. Server naběhne normálně, takže nic nenapovídá — z telefonu
+   to vypadá jako špatná adresa. Jednorázově v PowerShellu **jako správce**:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "BetterNotes sync" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 4545 -Profile Domain,Private
+   ```
+
+3. **Změněná adresa.** Přiděluje ji router přes DHCP, takže se po restartu
+   může posunout. Server ji při startu vždycky vypíše znovu; kdo to nechce
+   řešit, zamluví si na routeru pro počítač pevnou adresu.
 
 ## Instalace do telefonu
 

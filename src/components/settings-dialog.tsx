@@ -207,7 +207,7 @@ export function SettingsDialog({
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
               onBlur={saveEndpoint}
-              placeholder="192.168.1.10:3000"
+              placeholder="192.168.1.10:4545"
               inputMode="url"
               autoCapitalize="off"
               autoCorrect="off"
