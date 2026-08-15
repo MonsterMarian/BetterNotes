@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { LayoutGrid, List, NotebookPen, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import { NoteCard } from "./note-card";
+import { SwipeToDelete } from "./swipe-to-delete";
 import { Button } from "@/components/ui/button";
 import { Fab } from "@/components/ui/fab";
 import { Input, Select } from "@/components/ui/input";
@@ -176,6 +177,7 @@ export function NotesList() {
           <p className="text-xs text-muted-foreground">
             {notes.length} {plural(notes.length, "poznámka", "poznámky", "poznámek")}
             {notes.length !== total ? ` z ${total}` : ""}
+            <span className="ml-2 opacity-70">· tažením vlevo smažeš</span>
           </p>
           <div
             className={cn(
@@ -184,7 +186,9 @@ export function NotesList() {
             )}
           >
             {notes.map((note) => (
-              <NoteCard key={note.id} note={note} dense={view === "grid"} />
+              <SwipeToDelete key={note.id} note={note}>
+                <NoteCard note={note} dense={view === "grid"} />
+              </SwipeToDelete>
             ))}
           </div>
         </>

@@ -16,7 +16,8 @@
     "android:apk": "npm run ota:bundle && npm run android:sync && node scripts/gradle.mjs assembleDebug",
     "android:release": "npm run ota:bundle && npm run android:sync && node scripts/gradle.mjs assembleRelease && npm run android:sign",
     "android:sign": "node scripts/sign-apk.mjs",
-    "ota:bundle": "node scripts/release.mjs"
+    "ota:bundle": "node scripts/release.mjs",
+    "sync:pull": "node tools/sync-pull.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
