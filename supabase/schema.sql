@@ -22,6 +22,9 @@ create table if not exists public.notes_outbox (
   body text not null default '',
   tags text[] not null default '{}',
 
+  -- Barva poznamky (prouzek v seznamu). Pridano pozdeji, viz ALTER nize.
+  tone text not null default 'none',
+
   -- Cesty do storage bucketu, ne samotné bajty. Fotka v databázi by šla taky,
   -- ale řádek by nabobtnal na megabajty a čtení fronty by se vleklo.
   images text[] not null default '{}',
@@ -40,6 +43,9 @@ create table if not exists public.notes_outbox (
 
 -- Počítač se ptá pořád dokola na totéž: "co je moje a ještě nestažené".
 -- Bez indexu by to s přibývajícími poznámkami procházelo celou tabulku.
+-- Idempotentni doplneni sloupce pro jiz existujici tabulky.
+alter table public.notes_outbox add column if not exists tone text not null default 'none';
+
 create index if not exists notes_outbox_pending_idx
   on public.notes_outbox (user_id, sent_at)
   where pulled_at is null;

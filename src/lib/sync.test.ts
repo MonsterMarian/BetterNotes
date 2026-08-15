@@ -25,6 +25,7 @@ describe("noteToRow", () => {
       body: "mléko",
       tags: ["dum"],
       images: [],
+      tone: "none",
       note_created_at: "2026-01-01T10:00:00.000Z",
       note_updated_at: "2026-02-01T12:00:00.000Z",
     });

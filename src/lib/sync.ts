@@ -78,6 +78,8 @@ export interface OutboxRow {
   body: string;
   tags: string[];
   images: string[];
+  /** Barva prouzku poznamky (NoteTone). */
+  tone: string;
   note_created_at: string;
   note_updated_at: string;
 }
@@ -95,6 +97,7 @@ export function noteToRow(note: Note, images: string[]): OutboxRow {
     body: note.text,
     tags: note.tags,
     images,
+    tone: note.tone,
     note_created_at: note.createdAt,
     note_updated_at: note.updatedAt,
   };
