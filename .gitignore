@@ -35,3 +35,7 @@ taste/*.psd
 # Staré balíky maže build skript, v repozitáři zůstává jen ten poslední.
 
 harness/
+
+# Dočasná stránka na načtení poznámek do prohlížeče na počítači.
+# poznamky.json obsahuje tvoje poznámky včetně fotek - do repozitáře nepatří.
+/public/
