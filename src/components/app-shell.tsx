@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { NotebookPen, Settings, Trash2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { SettingsDialog } from "@/components/settings-dialog";
-import { useTrackNavigation } from "@/components/providers/use-app-back";
+import { closeTopBackLayer, useTrackNavigation } from "@/components/providers/use-app-back";
 import { useStore } from "@/components/providers/store-provider";
 import { trashedNotes } from "@/lib/notes";
 import { applyPendingUpdate, checkForUpdate, markBootSucceeded } from "@/lib/live-update";
@@ -53,6 +53,8 @@ function useNativeShell() {
   React.useEffect(() => {
     let cleanup = () => {};
     void registerBackButton(() => {
+      // Otevřená lupa nad detailem se zavře dřív, než se začne navigovat.
+      if (closeTopBackLayer()) return true;
       if (atRoot.current) return false;
       router.back();
       return true;

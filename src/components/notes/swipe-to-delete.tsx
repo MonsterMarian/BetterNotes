@@ -27,7 +27,16 @@ const TRIGGER = 72;
  * Svislé rolování drží `touch-action: pan-y` - prohlížeč si posouvání
  * vezme sám a my dostaneme jen vodorovné tahy.
  */
-export function SwipeToDelete({ note, children }: { note: Note; children: React.ReactNode }) {
+export function SwipeToDelete({
+  note,
+  children,
+  stretch = false,
+}: {
+  note: Note;
+  children: React.ReactNode;
+  /** V mřížce se karta natahuje na výšku řádku - obal ji nesmí zaříznout. */
+  stretch?: boolean;
+}) {
   const { trash } = useStore();
   const { toast } = useToast();
   const [dx, setDx] = React.useState(0);
@@ -104,7 +113,7 @@ export function SwipeToDelete({ note, children }: { note: Note; children: React.
 
   return (
     <>
-      <div className="relative overflow-hidden rounded-xl">
+      <div className={cn("relative overflow-hidden rounded-xl", stretch && "h-full")}>
         {/* Koš pod kartou - vidět, jakmile karta ujede vlevo. */}
         <div className="pointer-events-none absolute inset-y-0 right-0 flex w-24 items-center justify-center bg-destructive text-destructive-foreground">
           <Trash2 className="size-5" />
@@ -119,6 +128,7 @@ export function SwipeToDelete({ note, children }: { note: Note; children: React.
           style={{ transform: `translateX(${dx}px)`, touchAction: "pan-y" }}
           className={cn(
             "relative bg-card",
+            stretch && "h-full",
             !dragging && "transition-transform duration-200",
             dragging && dx !== 0 && "select-none",
           )}

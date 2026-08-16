@@ -98,6 +98,7 @@ async function pullOnce(db, userId) {
     await mkdir(dir, { recursive: true });
 
     const images = [];
+    const body = row.body ?? "";
     for (const [i, storagePath] of (row.images ?? []).entries()) {
       const { data, error: dlError } = await db.storage.from("note-images").download(storagePath);
       if (dlError) {
@@ -113,8 +114,11 @@ async function pullOnce(db, userId) {
     // odkázat, takže se soubor dá rovnou otevřít v čemkoli.
     const lines = [`# ${row.title || "Poznámka"}`, ""];
     if (row.tags?.length) lines.push(`Štítky: ${row.tags.join(", ")}`, "");
-    lines.push(row.body ?? "");
-    if (images.length) lines.push("", ...images.map((name) => `![](${name})`));
+    lines.push(body);
+    // Fotku, na kterou text sám ukazuje, appka do textu vložila na její místo.
+    // Připsat ji ještě jednou na konec by ji v souboru zdvojilo.
+    const trailing = images.filter((name) => !body.includes(`](${name})`));
+    if (trailing.length) lines.push("", ...trailing.map((name) => `![](${name})`));
     await writeFile(path.join(dir, "poznamka.md"), `${lines.join("\n")}\n`, "utf8");
 
     // Označit se smí až po zápisu na disk. Kdyby to spadlo dřív, poznámka

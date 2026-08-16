@@ -179,14 +179,20 @@ export function NotesList() {
             {notes.length !== total ? ` z ${total}` : ""}
             <span className="ml-2 opacity-70">· tažením vlevo smažeš</span>
           </p>
+          {/*
+            V mřížce `items-stretch`: karty v jednom řádku srovnají výšku
+            a mezi řádky nezůstane díra. Zednické zdivo (`columns-2`) by díry
+            zavřelo taky, jenže by se pak četlo po sloupcích - a poznámky jsou
+            tříděné, takže "první" musí zůstat vlevo nahoře.
+          */}
           <div
             className={cn(
               "gap-3",
-              view === "grid" ? "grid grid-cols-2 items-start" : "flex flex-col",
+              view === "grid" ? "grid grid-cols-2 items-stretch" : "flex flex-col",
             )}
           >
             {notes.map((note) => (
-              <SwipeToDelete key={note.id} note={note}>
+              <SwipeToDelete key={note.id} note={note} stretch={view === "grid"}>
                 <NoteCard note={note} dense={view === "grid"} />
               </SwipeToDelete>
             ))}

@@ -27,8 +27,11 @@ export function NoteCard({ note, dense = false }: { note: Note; dense?: boolean 
       href={`/note/?id=${encodeURIComponent(note.id)}`}
       data-tone={note.tone}
       className={cn(
-        "note-stripe relative block overflow-hidden rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors",
+        "note-stripe relative flex flex-col overflow-hidden rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors",
         "hover:bg-accent/40 active:bg-accent/60",
+        // Karta v mřížce je vysoká jako celý řádek; datum a štítky pak sedí
+        // na dně, ne uprostřed prázdna.
+        dense && "h-full",
         note.tone !== "none" && "pl-5",
       )}
     >
@@ -63,7 +66,12 @@ export function NoteCard({ note, dense = false }: { note: Note; dense?: boolean 
         </div>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <div
+        className={cn(
+          "mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground",
+          dense && "mt-auto pt-3",
+        )}
+      >
         <span className="tabular">{formatDateRelative(day)}</span>
         {note.images.length > 0 ? (
           <span className="inline-flex items-center gap-1">

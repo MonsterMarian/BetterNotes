@@ -80,6 +80,18 @@ describe("noteExcerpt", () => {
   it("dlouhý text zkrátí", () => {
     expect(noteExcerpt(note({ title: "T", text: "x".repeat(200) }), 20)).toBe(`${"x".repeat(20)}…`);
   });
+
+  /* Značka fotky je zápis o umístění, ne text poznámky - v kartě seznamu by
+     z ní byl nesmysl "![](img_3.jpg)". */
+  it("značky fotek se do náhledu nepočítají", () => {
+    const n = note({ title: "Účtenka", text: "za oběd\n![](img_3.jpg)\n180 Kč" });
+
+    expect(noteExcerpt(n)).toBe("za oběd 180 Kč");
+  });
+
+  it("titulek si vezme první skutečný řádek, ne značku", () => {
+    expect(noteTitle(note({ text: "![](img_3.jpg)\nÚčtenka" }))).toBe("Účtenka");
+  });
 });
 
 describe("normalizeTag", () => {

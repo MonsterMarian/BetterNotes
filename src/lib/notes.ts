@@ -5,6 +5,7 @@
  * Každá změna vrací nový stav. Poznámky se nikdy nemění na místě, jinak by
  * React neviděl, že se něco stalo.
  */
+import { stripImageMarkers } from "./inline-images";
 import { createId } from "./utils";
 import {
   EMPTY_STATE,
@@ -40,7 +41,8 @@ export function trashedNotes(state: BetterNotesState): Note[] {
 export function noteTitle(note: Note): string {
   const title = note.title.trim();
   if (title) return title;
-  const firstLine = note.text
+  // Značka fotky není text poznámky - jako název by z ní bylo "![](img_3.jpg)".
+  const firstLine = stripImageMarkers(note.text)
     .split("\n")
     .map((l) => l.trim())
     .find((l) => l.length > 0);
@@ -53,7 +55,9 @@ export function noteTitle(note: Note): string {
  * v kartě neopakoval dvakrát pod sebou.
  */
 export function noteExcerpt(note: Note, limit = 140): string {
-  const lines = note.text.split("\n").map((l) => l.trim());
+  const lines = stripImageMarkers(note.text)
+    .split("\n")
+    .map((l) => l.trim());
   const skipFirst = !note.title.trim();
   const body = (skipFirst ? lines.slice(lines.findIndex((l) => l.length > 0) + 1) : lines)
     .filter((l) => l.length > 0)
@@ -106,7 +110,10 @@ export function fold(value: string): string {
 export function matchesQuery(note: Note, query: string): boolean {
   const words = fold(query).split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
-  const haystack = fold(`${note.title} ${note.text} ${note.tags.join(" ")}`);
+  // Jména souborů se nehledají - "img" by jinak našlo každou poznámku s fotkou.
+  const haystack = fold(
+    `${note.title} ${stripImageMarkers(note.text)} ${note.tags.join(" ")}`,
+  );
   return words.every((w) => haystack.includes(w));
 }
 

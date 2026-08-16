@@ -15,6 +15,9 @@ import {
   X,
 } from "lucide-react";
 import { Share } from "@capacitor/share";
+import { DictateButton } from "./dictate-button";
+import { ImageLightbox } from "./image-lightbox";
+import { NoteBody } from "./note-body";
 import { NoteThumb } from "./note-thumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +27,12 @@ import { usePrefs } from "@/components/providers/use-prefs";
 import { useGoUp } from "@/components/providers/use-app-back";
 import { useToast } from "@/components/providers/toast-provider";
 import { capturePhoto, deleteImage } from "@/lib/images";
+import {
+  insertImageMarker,
+  removeImageMarker,
+  stripImageMarkers,
+  trailingImages,
+} from "@/lib/inline-images";
 import { isEmptyNote, noteTitle, normalizeTag } from "@/lib/notes";
 import { isNative, tapFeedback, winFeedback } from "@/lib/native";
 import { currentAccount, sendNote } from "@/lib/sync";
@@ -31,10 +40,14 @@ import { isSupabaseConfigured } from "@/lib/supabase";
 import { NOTE_TONES, type NoteTone } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Text poznámky tak, jak se hodí do schránky nebo do sdílení. */
+/**
+ * Text poznámky tak, jak se hodí do schránky nebo do sdílení. Značky fotek
+ * jdou pryč - `![](img_12.jpg)` v cizí konverzaci neznamená nic.
+ */
 function plainText(title: string, text: string): string {
+  const body = stripImageMarkers(text).trim();
   const head = title.trim();
-  return head ? `${head}\n\n${text}` : text;
+  return head ? `${head}\n\n${body}` : body;
 }
 
 export function NoteDetail({ noteId }: { noteId: string }) {
@@ -49,6 +62,10 @@ export function NoteDetail({ noteId }: { noteId: string }) {
   const [busy, setBusy] = React.useState<"photo" | "send" | null>(null);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [tonesOpen, setTonesOpen] = React.useState(false);
+  /** Otevřená lupa - index do `note.images`; null = zavřená. */
+  const [zoom, setZoom] = React.useState<number | null>(null);
+  /** Poslední pozice kurzoru v textu - kam se vloží nová fotka. */
+  const caret = React.useRef<number | null>(null);
   // Tlačítko „Odeslat" se ukazuje jen přihlášenému. Nepřihlášenému by jen
   // svítilo a po ťuknutí ho poslalo do Nastavení - to je horší než ho nemít.
   const [canSend, setCanSend] = React.useState(false);
@@ -84,13 +101,20 @@ export function NoteDetail({ noteId }: { noteId: string }) {
     );
   }
 
+  const loose = trailingImages(note.text, note.images);
+
   const addPhoto = async (source: "camera" | "gallery") => {
     setBusy("photo");
     try {
       const name = await capturePhoto(source);
       if (!name) return;
       void tapFeedback();
-      update(note.id, { images: [...note.images, name] });
+      // Fotka sedne tam, kde je kurzor - proto se s ní do textu zapíše značka.
+      // Bez ní by skončila na konci, i kdyby patřila k odstavci uprostřed.
+      update(note.id, {
+        images: [...note.images, name],
+        text: insertImageMarker(note.text, name, caret.current ?? undefined),
+      });
     } catch (e) {
       toast({
         tone: "warn",
@@ -103,7 +127,11 @@ export function NoteDetail({ noteId }: { noteId: string }) {
   };
 
   const dropPhoto = (name: string) => {
-    update(note.id, { images: note.images.filter((n) => n !== name) });
+    update(note.id, {
+      images: note.images.filter((n) => n !== name),
+      // Značka bez fotky by v textu zůstala jako prázdný rámeček.
+      text: removeImageMarker(note.text, name),
+    });
     // Soubor pryč hned: sirotky sice po startu uklidí store, ale zbytečně
     // by do té doby zabíral místo v telefonu.
     void deleteImage(name);
@@ -222,22 +250,30 @@ export function NoteDetail({ noteId }: { noteId: string }) {
           aria-label="Název poznámky"
           className="w-full bg-transparent text-lg font-semibold tracking-tight outline-none placeholder:font-normal placeholder:text-muted-foreground"
         />
-        <textarea
-          value={note.text}
-          onChange={(e) => update(note.id, { text: e.target.value })}
-          placeholder="Piš…"
-          aria-label="Text poznámky"
-          // Vysoké pole schválně: poznámka se píše na celou obrazovku,
-          // ne do řádku, který se rozrůstá pod prstem.
-          className="min-h-[45vh] w-full resize-none bg-transparent text-[0.95rem] leading-relaxed outline-none placeholder:text-muted-foreground"
+        <NoteBody
+          text={note.text}
+          caretRef={caret}
+          onChange={(text) => update(note.id, { text })}
+          onOpenImage={(name) => setZoom(Math.max(0, note.images.indexOf(name)))}
         />
       </div>
 
-      {note.images.length > 0 ? (
+      {/*
+        Fotky bez značky v textu - starší poznámky a všechno, co se do textu
+        nezařadilo. Ty se pořád kreslí pod textem, jako dřív.
+      */}
+      {loose.length > 0 ? (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {note.images.map((name) => (
+          {loose.map((name) => (
             <div key={name} className="relative">
-              <NoteThumb name={name} className="aspect-square w-full" />
+              <button
+                type="button"
+                aria-label="Zvětšit fotku"
+                onClick={() => setZoom(Math.max(0, note.images.indexOf(name)))}
+                className="block w-full"
+              >
+                <NoteThumb name={name} className="aspect-square w-full" />
+              </button>
               <button
                 type="button"
                 aria-label="Odebrat fotku"
@@ -304,6 +340,11 @@ export function NoteDetail({ noteId }: { noteId: string }) {
           <ImagePlus />
           Z galerie
         </Button>
+        <DictateButton
+          text={note.text}
+          at={caret.current}
+          onChange={(text) => update(note.id, { text })}
+        />
       </div>
 
       {canSend ? (
@@ -315,6 +356,15 @@ export function NoteDetail({ noteId }: { noteId: string }) {
           <Send />
           {busy === "send" ? "Odesílám…" : "Odeslat do počítače"}
         </Button>
+      ) : null}
+
+      {zoom !== null && note.images.length > 0 ? (
+        <ImageLightbox
+          names={note.images}
+          index={zoom}
+          onIndexChange={setZoom}
+          onClose={() => setZoom(null)}
+        />
       ) : null}
 
       <Dialog

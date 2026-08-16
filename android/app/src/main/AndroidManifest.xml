@@ -36,7 +36,16 @@
         </provider>
     </application>
 
+    <!-- Diktování: rozpoznávač řeči běží mimo appku, ale mikrofon si musí
+         vyžádat ona. Bez <queries> ho na Androidu 11+ ani nenajde. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 </manifest>

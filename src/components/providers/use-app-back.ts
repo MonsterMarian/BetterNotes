@@ -32,6 +32,39 @@ export function useTrackNavigation(): void {
   }, [pathname]);
 }
 
+/**
+ * Vrstvy, které tlačítko Zpět zavře dřív, než se někam naviguje.
+ *
+ * Fotka přes celou obrazovku není obrazovka v routeru - kdyby Zpět rovnou
+ * navigovalo, zavřelo by z lupy celý detail poznámky. Zásobník proto drží
+ * poslední otevřenou vrstvu a ta si Zpět vezme pro sebe.
+ */
+const backLayers: { close: () => void }[] = [];
+
+/** Vrátí true, když si Zpět vzala některá vrstva a navigovat se nemá. */
+export function closeTopBackLayer(): boolean {
+  const top = backLayers[backLayers.length - 1];
+  if (!top) return false;
+  top.close();
+  return true;
+}
+
+/** Přihlásí otevřenou vrstvu (lupa, budoucí přehrávač) k tlačítku Zpět. */
+export function useBackLayer(open: boolean, close: () => void): void {
+  const latest = React.useRef(close);
+  latest.current = close;
+
+  React.useEffect(() => {
+    if (!open) return;
+    const layer = { close: () => latest.current() };
+    backLayers.push(layer);
+    return () => {
+      const at = backLayers.indexOf(layer);
+      if (at !== -1) backLayers.splice(at, 1);
+    };
+  }, [open]);
+}
+
 /** Vrátí funkci „jdi na tuhle nadřazenou obrazovku". */
 export function useGoUp(): (href: string) => void {
   const router = useRouter();
