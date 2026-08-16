@@ -5,9 +5,19 @@ import { LogOut, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { usePrefs } from "@/components/providers/use-prefs";
+import { useStore } from "@/components/providers/store-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { setPrefs } from "@/lib/prefs";
-import { currentAccount, pendingCount, signIn, signOut, signUp, type Account } from "@/lib/sync";
+import { liveNotes } from "@/lib/notes";
+import {
+  currentAccount,
+  pendingCount,
+  sendAllNotes,
+  signIn,
+  signOut,
+  signUp,
+  type Account,
+} from "@/lib/sync";
 import { isSupabaseConfigured, setSupabaseUrl, SUPABASE_ANON_KEY } from "@/lib/supabase";
 import { plural } from "@/lib/utils";
 
@@ -74,6 +84,35 @@ export function AccountSection() {
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // null = neběží; jinak kolik poznámek už odešlo.
+  const [bulk, setBulk] = React.useState<{ done: number; total: number } | null>(null);
+
+  const { state, trash } = useStore();
+  const live = React.useMemo(() => liveNotes(state), [state]);
+
+  const sendAll = async () => {
+    setBulk({ done: 0, total: live.length });
+    const res = await sendAllNotes(live, (done, total) => setBulk({ done, total }));
+    setBulk(null);
+
+    // Úklid až po dojetí celé fronty: mazat pod rukama seznamu, přes který
+    // se právě prochází, by odeslání zamotalo.
+    if (trashAfterSync) for (const id of res.sentIds) trash(id);
+
+    void refresh();
+    toast(
+      res.failed === 0
+        ? {
+            tone: "success",
+            title: `Odesláno ${res.sent} ${plural(res.sent, "poznámka", "poznámky", "poznámek")}`,
+          }
+        : {
+            tone: "warn",
+            title: `Odesláno ${res.sent} z ${res.sent + res.failed}`,
+            description: res.message,
+          },
+    );
+  };
 
   const refresh = React.useCallback(async () => {
     // Bez adresy se na klienta nesmí sáhnout - `createClient` s prázdnou
@@ -159,10 +198,35 @@ export function AccountSection() {
           Po odeslání dát poznámku do koše
         </label>
 
+        {/*
+         * Hromadné odeslání je hlavně pro první přihlášení: v telefonu leží
+         * zápisník, který vznikl dřív než odesílání, a proklikat ho po jedné
+         * poznámce nikdo nechce.
+         */}
+        <div className="flex flex-col gap-1.5 rounded-lg border p-2.5">
+          <Button
+            size="sm"
+            className="self-start bg-progress text-progress-foreground hover:bg-progress/90"
+            disabled={bulk !== null || live.length === 0}
+            onClick={() => void sendAll()}
+          >
+            <Send />
+            {bulk
+              ? `Odesílám ${bulk.done}/${bulk.total}…`
+              : `Odeslat všechny (${live.length})`}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            {live.length === 0
+              ? "Zápisník je prázdný, není co odesílat."
+              : "Pošle do fronty všechny poznámky mimo koš, jednu po druhé."}
+          </p>
+        </div>
+
         <Button
           variant="ghost"
           size="sm"
           className="self-start"
+          disabled={bulk !== null}
           onClick={async () => {
             await signOut();
             void refresh();

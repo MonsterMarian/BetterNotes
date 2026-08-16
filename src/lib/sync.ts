@@ -126,6 +126,48 @@ export async function sendNote(note: Note): Promise<SyncResult> {
   }
 }
 
+export interface BulkResult {
+  sent: number;
+  failed: number;
+  /** Hláška z prvního neúspěchu - víc jich uživateli stejně nepomůže. */
+  message?: string;
+  /** Id poznámek, které prošly. Volající podle nich uklidí do koše. */
+  sentIds: string[];
+}
+
+/**
+ * Odešle celý zápisník najednou.
+ *
+ * Kvůli první instalaci: v telefonu leží poznámky, které vznikly, než
+ * odesílání existovalo, a proklikat je po jedné je trest. Jede se postupně,
+ * ne přes `Promise.all` - deset souběžných uploadů fotek na mobilních datech
+ * spolehlivě vytimeoutuje, zatímco fronta jednu po druhé dojede vždycky.
+ *
+ * Neúspěch jedné poznámky zbytek nezastaví: co projde, to je ve frontě, a na
+ * zbytek se dá kliknout znovu. Poznámka se do fronty klidně dostane dvakrát -
+ * počítač si stáhne obojí, což je lepší než ztratit ji.
+ */
+export async function sendAllNotes(
+  notes: Note[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<BulkResult> {
+  const result: BulkResult = { sent: 0, failed: 0, sentIds: [] };
+
+  for (const [i, note] of notes.entries()) {
+    const res = await sendNote(note);
+    if (res.ok) {
+      result.sent += 1;
+      result.sentIds.push(note.id);
+    } else {
+      result.failed += 1;
+      result.message ??= res.message;
+    }
+    onProgress?.(i + 1, notes.length);
+  }
+
+  return result;
+}
+
 /** Kolik poznámek čeká, než si je počítač vyzvedne. */
 export async function pendingCount(): Promise<number | null> {
   const { count, error } = await supabase()
