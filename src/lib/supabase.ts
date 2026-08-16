@@ -19,12 +19,17 @@ export const BUILD_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 /**
- * Adresa projektu. Přednost má to, co je zadané v Nastavení - adresa
- * z buildu je jen výchozí hodnota, aby ji uživatel nemusel opisovat,
- * když ji build zná.
+ * Adresa projektu. Přednost má ta z buildu, ručně zadaná je záchranná brzda
+ * pro build, který adresu nezná.
+ *
+ * Bylo to obráceně a pálilo to: pole na adresu se ukazuje jen tehdy, když ji
+ * build nemá, takže cokoli uloženého pochází z doby, kdy appka klíč neměla -
+ * klidně i překlep nebo `abcdefgh.supabase.co` z nápovědy. Jakmile pak přišel
+ * balík s pořádnou adresou, stará uložená ho přebila a přihlášení padalo na
+ * "Nepovedlo se spojit se serverem", aniž by šlo adresu v appce přepsat.
  */
 export function supabaseUrl(): string {
-  return getPrefs().supabaseUrl || BUILD_SUPABASE_URL;
+  return BUILD_SUPABASE_URL || getPrefs().supabaseUrl;
 }
 
 /** Klíč je vždycky z buildu: dlouhý JWT se na telefonu opisovat nedá. */

@@ -18,7 +18,7 @@ import {
   signUp,
   type Account,
 } from "@/lib/sync";
-import { isSupabaseConfigured, setSupabaseUrl, SUPABASE_ANON_KEY } from "@/lib/supabase";
+import { isSupabaseConfigured, setSupabaseUrl, supabaseUrl, SUPABASE_ANON_KEY } from "@/lib/supabase";
 import { plural } from "@/lib/utils";
 
 /**
@@ -274,6 +274,12 @@ export function AccountSection() {
       </Field>
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
+
+      {/* Adresa je vidět schválně: když přihlášení hlásí, že se nepovedlo
+          spojit se serverem, tohle je první věc, kterou je potřeba ověřit. */}
+      <p className="text-[0.7rem] text-muted-foreground">
+        Server: <span className="break-all font-mono">{supabaseUrl()}</span>
+      </p>
 
       <div className="flex gap-2">
         <Button
