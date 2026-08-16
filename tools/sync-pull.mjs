@@ -12,6 +12,7 @@
  *
  * Údaje se berou z `.env.local` (viz `.env.local.example`).
  */
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
@@ -65,6 +66,17 @@ function stamp(iso) {
   return new Date(iso).toISOString().slice(0, 19).replace(/[:T]/g, "-");
 }
 
+/**
+ * Složka, která ještě neexistuje.
+ *
+ * Razítko je na sekundy a titulek se opakuje, takže hromadné odeslání umí
+ * vyrobit dvě poznámky se stejným jménem složky - a druhá tu první přepsala.
+ * Kousek id z databáze je krátký, stabilní a jedinečný.
+ */
+function uniqueDir(base, id) {
+  return existsSync(base) ? `${base}_${id.slice(0, 8)}` : base;
+}
+
 async function pullOnce(db, userId) {
   const { data: rows, error } = await db
     .from("notes_outbox")
@@ -79,7 +91,10 @@ async function pullOnce(db, userId) {
   if (rows.length === 0) return 0;
 
   for (const row of rows) {
-    const dir = path.join(SAVE_DIR, `${stamp(row.sent_at)}_${safeName(row.title, "poznamka")}`);
+    const dir = uniqueDir(
+      path.join(SAVE_DIR, `${stamp(row.sent_at)}_${safeName(row.title, "poznamka")}`),
+      row.id,
+    );
     await mkdir(dir, { recursive: true });
 
     const images = [];
