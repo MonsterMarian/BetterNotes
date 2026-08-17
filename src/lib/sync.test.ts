@@ -1,16 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { noteToRow, sendAllNotes } from "./sync";
+import { noteToRow, sendAllNotes, sendNote } from "./sync";
 import type { Note } from "./types";
 
 /*
  * Databáze se nahrazuje atrapou: hromadné odesílání je o pořadí a o tom, co
  * se stane, když jedna poznámka selže - a to jde ověřit bez sítě.
  */
-const inserted: { title: string }[] = [];
+interface FakeRow {
+  title: string;
+  note_id?: string;
+  pulled_at?: string | null;
+  sent_at?: string;
+}
+
+const inserted: FakeRow[] = [];
+const conflicts: (string | undefined)[] = [];
 let failOn: string | null = null;
+/** Databáze bez migrace: `upsert` na `note_id` v ní ještě nemá o co se opřít. */
+let missingNoteId = false;
 
 vi.mock("./images", () => ({ imageBlob: async () => null }));
 
+/**
+ * Atrapa fronty. `upsert` se chová jako databáze s unikátním indexem:
+ * řádek se stejným `note_id` ten původní přepíše, jinak přibude.
+ */
 vi.mock("./supabase", () => ({
   NOTES_TABLE: "notes_outbox",
   IMAGES_BUCKET: "note-images",
@@ -18,9 +32,18 @@ vi.mock("./supabase", () => ({
   supabase: () => ({
     auth: { getSession: async () => ({ data: { session: { user: { id: "u1" } } } }) },
     from: () => ({
-      insert: async (row: { title: string }) => {
+      insert: async (row: FakeRow) => {
         if (row.title === failOn) return { error: new Error("Server odmítl řádek.") };
         inserted.push(row);
+        return { error: null };
+      },
+      upsert: async (row: FakeRow, options?: { onConflict?: string }) => {
+        if (missingNoteId) return { error: { code: "42703", message: "column note_id" } };
+        if (row.title === failOn) return { error: new Error("Server odmítl řádek.") };
+        conflicts.push(options?.onConflict);
+        const at = inserted.findIndex((r) => r.note_id === row.note_id);
+        if (at === -1) inserted.push(row);
+        else inserted[at] = row;
         return { error: null };
       },
     }),
@@ -42,10 +65,13 @@ function note(patch: Partial<Note> = {}): Note {
   };
 }
 
+const SENT_AT = new Date("2026-03-01T08:00:00.000Z");
+
 describe("noteToRow", () => {
   it("přenese obsah i časy z telefonu", () => {
-    const row = noteToRow(note({ title: "Nákup", text: "mléko", tags: ["dum"] }), []);
+    const row = noteToRow(note({ title: "Nákup", text: "mléko", tags: ["dum"] }), [], SENT_AT);
     expect(row).toEqual({
+      note_id: "n1",
       title: "Nákup",
       body: "mléko",
       tags: ["dum"],
@@ -53,7 +79,15 @@ describe("noteToRow", () => {
       tone: "none",
       note_created_at: "2026-01-01T10:00:00.000Z",
       note_updated_at: "2026-02-01T12:00:00.000Z",
+      sent_at: "2026-03-01T08:00:00.000Z",
+      pulled_at: null,
     });
+  });
+
+  /* Přepsaný řádek se musí tvářit jako čerstvý, jinak by si počítač novou
+     podobu poznámky nestáhl - tu starou už má odbytou. */
+  it("řádek jde vždycky do fronty jako nevyzvednutý", () => {
+    expect(noteToRow(note(), []).pulled_at).toBe(null);
   });
 
   it("poznámce bez titulku ho odvodí z textu, ať má složka v počítači jméno", () => {
@@ -78,10 +112,58 @@ describe("noteToRow", () => {
   });
 });
 
+/*
+ * Poznámka odeslaná podruhé nemá ve frontě ležet dvakrát - přepíše svůj řádek.
+ * Pozná se podle `note_id`, které se přes úpravy poznámky nemění.
+ */
+describe("opakované odeslání téže poznámky", () => {
+  beforeEach(() => {
+    inserted.length = 0;
+    conflicts.length = 0;
+    failOn = null;
+    missingNoteId = false;
+  });
+
+  it("druhé odeslání přepíše řádek, nezaloží druhý", async () => {
+    await sendNote(note({ id: "n1", title: "Nákup", text: "mléko" }));
+    await sendNote(note({ id: "n1", title: "Nákup", text: "mléko, chleba" }));
+
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].title).toBe("Nákup");
+    expect((inserted[0] as unknown as { body: string }).body).toBe("mléko, chleba");
+  });
+
+  it("dvě různé poznámky zůstanou dvě", async () => {
+    await sendNote(note({ id: "a", title: "První" }));
+    await sendNote(note({ id: "b", title: "Druhá" }));
+
+    expect(inserted.map((r) => r.title)).toEqual(["První", "Druhá"]);
+  });
+
+  it("shodu hledá podle uživatele a id poznámky", async () => {
+    await sendNote(note());
+    expect(conflicts).toEqual(["user_id,note_id"]);
+  });
+
+  /* Databáze, kde se ještě nepustil `supabase/schema.sql`, `note_id` nezná.
+     Poznámku je pořád lepší poslat postaru než ji neposlat vůbec. */
+  it("databáze bez migrace poznámku spolkne jako nový řádek", async () => {
+    missingNoteId = true;
+    const res = await sendNote(note({ id: "n1", title: "Nákup" }));
+
+    expect(res.ok).toBe(true);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].note_id).toBeUndefined();
+    expect(inserted[0].pulled_at).toBeUndefined();
+  });
+});
+
 describe("sendAllNotes", () => {
   beforeEach(() => {
     inserted.length = 0;
+    conflicts.length = 0;
     failOn = null;
+    missingNoteId = false;
   });
 
   it("odešle celý zápisník a vrátí id, která prošla", async () => {

@@ -77,6 +77,30 @@ function uniqueDir(base, id) {
   return existsSync(base) ? `${base}_${id.slice(0, 8)}` : base;
 }
 
+const INDEX_FILE = path.join(SAVE_DIR, ".stazene.json");
+
+/**
+ * Kam se která poznámka stáhla naposledy: `note_id` → složka.
+ *
+ * Přepsaná poznámka přijde znovu (viz `pulled_at` v appce) a má přepsat svoje
+ * staré soubory, ne se vedle nich usadit podruhé. Bez téhle mapy by to nešlo -
+ * jméno složky nese čas odeslání, který se mezitím posunul.
+ */
+async function loadIndex() {
+  try {
+    const parsed = JSON.parse(await readFile(INDEX_FILE, "utf8"));
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    // Soubor ještě není, nebo je rozbitý - začne se nanovo.
+    return {};
+  }
+}
+
+async function saveIndex(index) {
+  await mkdir(SAVE_DIR, { recursive: true });
+  await writeFile(INDEX_FILE, `${JSON.stringify(index, null, 2)}\n`, "utf8");
+}
+
 async function pullOnce(db, userId) {
   const { data: rows, error } = await db
     .from("notes_outbox")
@@ -90,12 +114,26 @@ async function pullOnce(db, userId) {
   }
   if (rows.length === 0) return 0;
 
+  const index = await loadIndex();
+  let indexChanged = false;
+
   for (const row of rows) {
-    const dir = uniqueDir(
-      path.join(SAVE_DIR, `${stamp(row.sent_at)}_${safeName(row.title, "poznamka")}`),
-      row.id,
-    );
+    // Poznámka, která už jednou přišla, se přepíše ve své složce. Nová dostane
+    // složku podle času odeslání a titulku, jak to bylo vždycky.
+    const known = row.note_id ? index[row.note_id] : undefined;
+    const dir =
+      known && existsSync(known)
+        ? known
+        : uniqueDir(
+            path.join(SAVE_DIR, `${stamp(row.sent_at)}_${safeName(row.title, "poznamka")}`),
+            row.id,
+          );
     await mkdir(dir, { recursive: true });
+
+    if (row.note_id && index[row.note_id] !== dir) {
+      index[row.note_id] = dir;
+      indexChanged = true;
+    }
 
     const images = [];
     const body = row.body ?? "";
@@ -133,8 +171,13 @@ async function pullOnce(db, userId) {
       console.error(`  označení selhalo (${markError.message}) - přijde znovu příště`);
     }
 
-    console.log(`✓ ${row.title || "Poznámka"} → ${dir}${images.length ? ` (${images.length} fotek)` : ""}`);
+    const again = known && existsSync(known) ? " (přepsáno)" : "";
+    console.log(
+      `✓ ${row.title || "Poznámka"}${again} → ${dir}${images.length ? ` (${images.length} fotek)` : ""}`,
+    );
   }
+
+  if (indexChanged) await saveIndex(index);
 
   return rows.length;
 }

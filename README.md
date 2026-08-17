@@ -54,7 +54,10 @@ zdrojem pravdy.
 
 2. **Vytvoř tabulku a úložiště.** V Supabase otevři *SQL Editor → New query*,
    vlož obsah [`supabase/schema.sql`](supabase/schema.sql) a spusť. Skript jde
-   pustit opakovaně, aniž by něco rozbil.
+   pustit opakovaně, aniž by něco rozbil — a po každé změně schématu se pustit
+   **má**. Poslední změna přidala `note_id` a unikátní index, díky kterému
+   se opakovaně odeslaná poznámka ve frontě přepíše místo zdvojení. Než skript
+   proběhne, appka posílá postaru a duplikáty vznikat můžou.
 
 3. **Vyplň údaje.** Zkopíruj `.env.local.example` jako `.env.local` a doplň
    `NEXT_PUBLIC_SUPABASE_URL` a `NEXT_PUBLIC_SUPABASE_ANON_KEY` — najdeš je

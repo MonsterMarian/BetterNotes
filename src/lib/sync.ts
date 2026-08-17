@@ -74,6 +74,8 @@ async function uploadImages(note: Note, userId: string): Promise<string[]> {
 
 /** Řádek fronty tak, jak ho čeká `supabase/schema.sql`. */
 export interface OutboxRow {
+  /** Id poznámky z telefonu - podle něj se pozná opakované odeslání téže poznámky. */
+  note_id: string;
   title: string;
   body: string;
   tags: string[];
@@ -82,6 +84,13 @@ export interface OutboxRow {
   tone: string;
   note_created_at: string;
   note_updated_at: string;
+  /** Čas odeslání. U přepsaného řádku se posouvá na teď. */
+  sent_at: string;
+  /**
+   * Vždy `null`: přepsaná poznámka se musí stáhnout znovu, i kdyby si počítač
+   * tu původní verzi už vyzvedl. Jinak by v počítači zůstala stará podoba.
+   */
+  pulled_at: null;
 }
 
 /**
@@ -91,8 +100,9 @@ export interface OutboxRow {
  * a v počítači by z ní byla složka "poznamka", "poznamka2"... `noteTitle`
  * v takovém případě sáhne po prvním řádku textu.
  */
-export function noteToRow(note: Note, images: string[]): OutboxRow {
+export function noteToRow(note: Note, images: string[], now: Date = new Date()): OutboxRow {
   return {
+    note_id: note.id,
     title: noteTitle(note),
     body: note.text,
     tags: note.tags,
@@ -100,12 +110,31 @@ export function noteToRow(note: Note, images: string[]): OutboxRow {
     tone: note.tone,
     note_created_at: note.createdAt,
     note_updated_at: note.updatedAt,
+    sent_at: now.toISOString(),
+    pulled_at: null,
   };
+}
+
+/**
+ * Chyby, které znamenají "databáze ještě nemá `note_id`".
+ *
+ * 42703 = neznámý sloupec, 42P10 = není unikátní index, na který by šlo
+ * navázat `on conflict`. Obojí se stane přesně jednou: na telefonu s novou
+ * appkou proti databázi, kde se ještě nepustil `supabase/schema.sql`.
+ */
+function needsMigration(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "42703" || code === "42P10";
 }
 
 /**
  * Zapíše poznámku do fronty. Fotky jdou první: kdyby se nahrávání nepovedlo,
  * ať ve frontě nezůstane řádek odkazující na soubory, které tam nejsou.
+ *
+ * `upsert`, ne `insert`: poznámka odeslaná podruhé má ve frontě přepsat tu
+ * svoji, ne vedle ní přistát znovu. Poznává se podle `note_id`, které se přes
+ * úpravy nemění, a přepsaný řádek se tváří jako čerstvě odeslaný (`sent_at`
+ * na teď, `pulled_at` zpátky na prázdno), takže si počítač stáhne novou podobu.
  */
 export async function sendNote(note: Note): Promise<SyncResult> {
   const db = supabase();
@@ -116,9 +145,18 @@ export async function sendNote(note: Note): Promise<SyncResult> {
 
   try {
     const images = await uploadImages(note, userId);
+    const row = { ...noteToRow(note, images), user_id: userId };
 
-    const { error } = await db.from(NOTES_TABLE).insert(noteToRow(note, images));
-    if (error) throw error;
+    const { error } = await db.from(NOTES_TABLE).upsert(row, { onConflict: "user_id,note_id" });
+    if (!error) return { ok: true, images: images.length };
+
+    // Databáze bez migrace: poznámku je pořád lepší poslat jako nový řádek
+    // než ji neposlat vůbec. Duplikát vznikne, dokud se schéma nedoplní.
+    if (!needsMigration(error)) throw error;
+
+    const { note_id: _dropped, pulled_at: _pulled, ...legacy } = row;
+    const fallback = await db.from(NOTES_TABLE).insert(legacy);
+    if (fallback.error) throw fallback.error;
 
     return { ok: true, images: images.length };
   } catch (e) {
@@ -144,8 +182,8 @@ export interface BulkResult {
  * spolehlivě vytimeoutuje, zatímco fronta jednu po druhé dojede vždycky.
  *
  * Neúspěch jedné poznámky zbytek nezastaví: co projde, to je ve frontě, a na
- * zbytek se dá kliknout znovu. Poznámka se do fronty klidně dostane dvakrát -
- * počítač si stáhne obojí, což je lepší než ztratit ji.
+ * zbytek se dá kliknout znovu. Opakované odeslání nic nezdvojí - řádek si
+ * poznámka ve frontě přepíše, viz `sendNote`.
  */
 export async function sendAllNotes(
   notes: Note[],

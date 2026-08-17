@@ -36,6 +36,10 @@ create table if not exists public.notes_outbox (
 
   sent_at timestamptz not null default now(),
 
+  -- Id poznámky z telefonu. Drží se přes úpravy, takže podle něj poznáme,
+  -- že "tahle poznámka už ve frontě je" - viz unikátní index níž.
+  note_id text,
+
   -- Vyplní počítač, když si poznámku stáhne. Dokud je prázdné, čeká ve frontě.
   -- Řádek se schválně nemaže: kdyby se zápis na disk nepovedl, je se k čemu vrátit.
   pulled_at timestamptz
@@ -43,8 +47,25 @@ create table if not exists public.notes_outbox (
 
 -- Počítač se ptá pořád dokola na totéž: "co je moje a ještě nestažené".
 -- Bez indexu by to s přibývajícími poznámkami procházelo celou tabulku.
--- Idempotentni doplneni sloupce pro jiz existujici tabulky.
+-- Idempotentni doplneni sloupcu pro jiz existujici tabulky.
 alter table public.notes_outbox add column if not exists tone text not null default 'none';
+alter table public.notes_outbox add column if not exists note_id text;
+
+-- ---------------------------------------------------------------------------
+-- Jedna poznámka = jeden řádek
+-- ---------------------------------------------------------------------------
+--
+-- Poznámka odeslaná podruhé (opravený překlep, dopsaný odstavec) nemá ve frontě
+-- ležet dvakrát. Appka proto místo `insert` dělá `upsert` a tenhle index je to,
+-- podle čeho databáze pozná, že jde o tutéž poznámku.
+--
+-- Řádky z doby před `note_id` dostanou vlastní hodnotu z `id`, aby index prošel
+-- a zároveň se navzájem nepovažovaly za duplikáty.
+update public.notes_outbox set note_id = id::text where note_id is null;
+alter table public.notes_outbox alter column note_id set not null;
+
+create unique index if not exists notes_outbox_note_uidx
+  on public.notes_outbox (user_id, note_id);
 
 create index if not exists notes_outbox_pending_idx
   on public.notes_outbox (user_id, sent_at)
