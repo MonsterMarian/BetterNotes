@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ImageIcon, Pin } from "lucide-react";
+import { CheckCircle2, ImageIcon, Pin } from "lucide-react";
 import { NoteThumb } from "./note-thumb";
 import { noteExcerpt, noteTitle } from "@/lib/notes";
 import { formatDateRelative } from "@/lib/date";
 import { cn, plural } from "@/lib/utils";
 import type { Note } from "@/lib/types";
+import { useLongPress } from "@/lib/use-long-press";
+import { tapFeedback } from "@/lib/native";
 
 /**
  * Poznámka v seznamu.
@@ -16,30 +18,54 @@ import type { Note } from "@/lib/types";
  * musí být co největší. Připnutí a mazání sedí až v detailu; tlačítka
  * v kartě by se pod prstem pletla s otevřením.
  */
-export function NoteCard({ note, dense = false }: { note: Note; dense?: boolean }) {
+export function NoteCard({
+  note,
+  dense = false,
+  selectionMode = false,
+  selected = false,
+  onToggle,
+  onLongPress,
+}: {
+  note: Note;
+  dense?: boolean;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggle?: () => void;
+  onLongPress?: () => void;
+}) {
   const title = noteTitle(note);
   const excerpt = noteExcerpt(note, dense ? 90 : 160);
   // Razítko je ISO s časem, `formatDateRelative` čeká YYYY-MM-DD.
   const day = note.updatedAt.slice(0, 10);
 
-  return (
-    <Link
-      href={`/note/?id=${encodeURIComponent(note.id)}`}
-      data-tone={note.tone}
-      className={cn(
-        "note-stripe relative flex flex-col overflow-hidden rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors",
-        "hover:bg-accent/40 active:bg-accent/60",
-        // Karta v mřížce je vysoká jako celý řádek; datum a štítky pak sedí
-        // na dně, ne uprostřed prázdna.
-        dense && "h-full",
-        note.tone !== "none" && "pl-5",
-      )}
-    >
+  const lp = useLongPress({
+    onLongPress: () => {
+      void tapFeedback();
+      onLongPress?.();
+    },
+    onClick: (e) => {
+      if (selectionMode) {
+        e.preventDefault();
+        onToggle?.();
+      }
+    },
+  });
+
+  const content = (
+    <>
       <div className="flex items-start gap-2">
         <h3 className={cn("min-w-0 flex-1 font-medium leading-snug", dense ? "text-sm" : "text-[0.95rem]")}>
           <span className="line-clamp-2 break-words">{title}</span>
         </h3>
         {note.pinned ? <Pin className="mt-0.5 size-3.5 shrink-0 fill-mark text-mark" /> : null}
+        {selectionMode ? (
+          <CheckCircle2
+            className={cn(
+              "mt-0.5 size-5 shrink-0 transition-colors",
+              selected ? "text-primary fill-primary/20" : "text-muted-foreground/30"
+            )}
+          />
+        ) : null}
       </div>
 
       {excerpt ? (
@@ -85,6 +111,43 @@ export function NoteCard({ note, dense = false }: { note: Note; dense?: boolean 
           </span>
         ))}
       </div>
+    </>
+  );
+
+  const className = cn(
+    "note-stripe relative flex flex-col overflow-hidden rounded-xl border p-4 shadow-sm transition-all text-left",
+    selectionMode
+      ? selected
+        ? "border-primary ring-1 ring-primary bg-primary/5 text-primary-foreground/90"
+        : "bg-card text-card-foreground opacity-80 grayscale-[20%]"
+      : "bg-card text-card-foreground hover:bg-accent/40 active:bg-accent/60",
+    // Karta v mřížce je vysoká jako celý řádek; datum a štítky pak sedí
+    // na dně, ne uprostřed prázdna.
+    dense && "h-full",
+    note.tone !== "none" && "pl-5",
+  );
+
+  if (selectionMode) {
+    return (
+      <button
+        type="button"
+        data-tone={note.tone}
+        className={className}
+        {...lp}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <Link
+      href={`/note/?id=${encodeURIComponent(note.id)}`}
+      data-tone={note.tone}
+      className={className}
+      {...lp}
+    >
+      {content}
     </Link>
   );
 }

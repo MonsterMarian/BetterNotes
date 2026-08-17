@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, List, NotebookPen, Plus, Search, SlidersHorizontal, X } from "lucide-react";
+import { LayoutGrid, List, NotebookPen, Plus, Search, SlidersHorizontal, X, Trash2, Send } from "lucide-react";
 import { NoteCard } from "./note-card";
 import { SwipeToDelete } from "./swipe-to-delete";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,10 @@ import { Fab } from "@/components/ui/fab";
 import { Input, Select } from "@/components/ui/input";
 import { useStore } from "@/components/providers/store-provider";
 import { usePrefs } from "@/components/providers/use-prefs";
+import { useToast } from "@/components/providers/toast-provider";
 import { setPrefs } from "@/lib/prefs";
 import { SORT_ORDERS, noteCount, tagCounts, visibleNotes } from "@/lib/notes";
+import { sendAllNotes } from "@/lib/sync";
 import { tapFeedback } from "@/lib/native";
 import { cn, plural } from "@/lib/utils";
 
@@ -36,12 +38,17 @@ function Empty({ hasNotes, onNew }: { hasNotes: boolean; onNew: () => void }) {
 
 export function NotesList() {
   const router = useRouter();
-  const { state, create, dropEmpty } = useStore();
-  const { view, order } = usePrefs();
+  const { state, create, dropEmpty, trash } = useStore();
+  const { view, order, trashAfterSync } = usePrefs();
+  const { toast } = useToast();
 
   const [query, setQuery] = React.useState("");
   const [tag, setTag] = React.useState<string | null>(null);
   const [toolsOpen, setToolsOpen] = React.useState(false);
+  
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [busy, setBusy] = React.useState(false);
+  const selectionMode = selectedIds.size > 0;
 
   /*
    * Úklid opuštěných skořápek. Na seznamu se needituje nic, takže prázdná
@@ -68,6 +75,40 @@ export function NotesList() {
     void tapFeedback();
     const note = create();
     router.push(`/note/?id=${encodeURIComponent(note.id)}`);
+  };
+
+  const handleBulkTrash = () => {
+    if (confirm(`Opravdu smazat ${selectedIds.size} ${plural(selectedIds.size, "poznámku", "poznámky", "poznámek")}?`)) {
+      for (const id of selectedIds) {
+        trash(id);
+      }
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleBulkSend = async () => {
+    setBusy(true);
+    const selectedNotes = notes.filter((n) => selectedIds.has(n.id));
+    const res = await sendAllNotes(selectedNotes);
+    setBusy(false);
+    
+    if (trashAfterSync) {
+      for (const id of res.sentIds) trash(id);
+    }
+    
+    setSelectedIds(new Set());
+    toast(
+      res.failed === 0
+        ? {
+            tone: "success",
+            title: `Odesláno ${res.sent} ${plural(res.sent, "poznámka", "poznámky", "poznámek")}`,
+          }
+        : {
+            tone: "warn",
+            title: `Odesláno ${res.sent} z ${res.sent + res.failed}`,
+            description: res.message,
+          },
+    );
   };
 
   return (
@@ -177,7 +218,7 @@ export function NotesList() {
           <p className="text-xs text-muted-foreground">
             {notes.length} {plural(notes.length, "poznámka", "poznámky", "poznámek")}
             {notes.length !== total ? ` z ${total}` : ""}
-            <span className="ml-2 opacity-70">· tažením vlevo smažeš</span>
+            {!selectionMode ? <span className="ml-2 opacity-70">· tažením vlevo smažeš</span> : null}
           </p>
           {/*
             V mřížce `items-stretch`: karty v jednom řádku srovnají výšku
@@ -189,21 +230,61 @@ export function NotesList() {
             className={cn(
               "gap-3",
               view === "grid" ? "grid grid-cols-2 items-stretch" : "flex flex-col",
+              selectionMode && "pb-20" // Extra padding for the bottom bar
             )}
           >
-            {notes.map((note) => (
-              <SwipeToDelete key={note.id} note={note} stretch={view === "grid"}>
-                <NoteCard note={note} dense={view === "grid"} />
-              </SwipeToDelete>
-            ))}
+            {notes.map((note) => {
+              const selected = selectedIds.has(note.id);
+              return (
+                <SwipeToDelete key={note.id} note={note} stretch={view === "grid"}>
+                  <NoteCard 
+                    note={note} 
+                    dense={view === "grid"} 
+                    selectionMode={selectionMode}
+                    selected={selected}
+                    onToggle={() => {
+                      const next = new Set(selectedIds);
+                      if (selected) next.delete(note.id);
+                      else next.add(note.id);
+                      setSelectedIds(next);
+                    }}
+                    onLongPress={() => {
+                      const next = new Set(selectedIds);
+                      next.add(note.id);
+                      setSelectedIds(next);
+                    }}
+                  />
+                </SwipeToDelete>
+              );
+            })}
           </div>
         </>
       )}
 
-      <Fab onClick={newNote} aria-label="Nová poznámka">
-        <Plus />
-        Nová
-      </Fab>
+      {selectionMode ? (
+        <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between border-t bg-background px-4 py-3 pb-safe animate-in slide-in-from-bottom-full shadow-[0_-4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => setSelectedIds(new Set())} aria-label="Zrušit výběr">
+              <X />
+            </Button>
+            <span className="font-medium text-sm">Vybráno {selectedIds.size}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={handleBulkTrash} disabled={busy} aria-label="Smazat vybrané">
+              <Trash2 className="text-destructive" />
+            </Button>
+            <Button className="bg-progress text-progress-foreground hover:bg-progress/90" onClick={() => void handleBulkSend()} disabled={busy}>
+              <Send />
+              {busy ? "Moment…" : "Odeslat"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Fab onClick={newNote} aria-label="Nová poznámka">
+          <Plus />
+          Nová
+        </Fab>
+      )}
     </div>
   );
 }
