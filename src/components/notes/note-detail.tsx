@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { Share } from "@capacitor/share";
-import { DictateButton } from "./dictate-button";
+import { VoiceMode } from "./voice-mode";
 import { ImageLightbox } from "./image-lightbox";
 import { NoteBody } from "./note-body";
 import { NoteThumb } from "./note-thumb";
@@ -340,7 +340,7 @@ export function NoteDetail({ noteId }: { noteId: string }) {
           <ImagePlus />
           Z galerie
         </Button>
-        <DictateButton
+        <VoiceMode
           text={note.text}
           at={caret.current}
           onChange={(text) => update(note.id, { text })}
