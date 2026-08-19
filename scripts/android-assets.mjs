@@ -7,7 +7,7 @@
  *
  * Spuštění: node scripts/android-assets.mjs
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { readdir, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
@@ -97,15 +97,35 @@ async function write(file, buffer) {
   await writeFile(file, buffer);
 }
 
-const LAUNCHER = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
-const FOREGROUND = { mdpi: 108, hdpi: 162, xhdpi: 216, xxhdpi: 324, xxxhdpi: 432 };
+/**
+ * Úklid před generováním.
+ *
+ * Sesterské appky (mpL, MicroWins) se chytly na tom, že jim v `res` ležely
+ * splashe ve variantách, které jejich skript nepsal - `-night` a `ldpi`
+ * z původní šablony. Android si je v tmavém režimu vybíral přednostně, takže
+ * appka při startu blikla cizím starým logem a ve světlém režimu to nešlo
+ * poznat. Tady se to zatím nestalo; smazání předem je pojistka, aby nemohlo.
+ */
+async function purgeStale() {
+  for (const dir of await readdir(RES, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue;
+    if (dir.name.split("-")[0] !== "drawable") continue;
+    await rm(path.join(RES, dir.name, "splash.png"), { force: true });
+  }
+}
+
+const LAUNCHER = { ldpi: 36, mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
+const FOREGROUND = { ldpi: 81, mdpi: 108, hdpi: 162, xhdpi: 216, xxhdpi: 324, xxxhdpi: 432 };
 const SPLASH = {
+  ldpi: [240, 320],
   mdpi: [320, 480],
   hdpi: [480, 800],
   xhdpi: [720, 1280],
   xxhdpi: [960, 1600],
   xxxhdpi: [1280, 1920],
 };
+
+await purgeStale();
 
 for (const [density, size] of Object.entries(LAUNCHER)) {
   const icon = await png(iconSvg(size));
@@ -117,11 +137,23 @@ for (const [density, size] of Object.entries(LAUNCHER)) {
   );
 }
 
+/*
+ * Tmavá varianta je stejný obrázek jako světlá - splash je tmavý sám o sobě
+ * (BG je z tmavého tématu), takže se v nočním režimu nemá co měnit. Psát
+ * `-night` se přesto vyplatí: bez nich Android v tmavém režimu sáhne po tom,
+ * co v `res` zbylo, a tak se sesterským appkám dostalo do startu cizí logo.
+ */
 for (const [density, [w, h]] of Object.entries(SPLASH)) {
-  await write(path.join(RES, `drawable-port-${density}`, "splash.png"), await png(splashSvg(w, h)));
-  await write(path.join(RES, `drawable-land-${density}`, "splash.png"), await png(splashSvg(h, w)));
+  const port = await png(splashSvg(w, h));
+  const land = await png(splashSvg(h, w));
+  await write(path.join(RES, `drawable-port-${density}`, "splash.png"), port);
+  await write(path.join(RES, `drawable-land-${density}`, "splash.png"), land);
+  await write(path.join(RES, `drawable-port-night-${density}`, "splash.png"), port);
+  await write(path.join(RES, `drawable-land-night-${density}`, "splash.png"), land);
 }
-await write(path.join(RES, "drawable", "splash.png"), await png(splashSvg(480, 800)));
+const fallbackSplash = await png(splashSvg(480, 800));
+await write(path.join(RES, "drawable", "splash.png"), fallbackSplash);
+await write(path.join(RES, "drawable-night", "splash.png"), fallbackSplash);
 
 // Adaptivní ikona kreslí pozadí barvou, ne obrázkem - proto sem, ne do PNG.
 await write(
