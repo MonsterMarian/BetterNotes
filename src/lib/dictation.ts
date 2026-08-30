@@ -52,19 +52,6 @@ export interface DictationStart {
   stop?: () => void;
 }
 
-/** Umí tohle zařízení vůbec diktovat? Podle toho se ukáže tlačítko mikrofonu. */
-export async function isDictationAvailable(): Promise<boolean> {
-  if (isNative()) {
-    try {
-      const res = await SpeechRecognition.available();
-      return res.available === true;
-    } catch {
-      return false;
-    }
-  }
-  return webRecognizer() !== null;
-}
-
 type WebRecognition = {
   lang: string;
   continuous: boolean;
@@ -211,7 +198,18 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
       },
     };
   } catch (e) {
-    return { ok: false, reason: "error", message: String(e).slice(0, 120) };
+    // Plugin řeči je součást APK, ne balíku z OTA. Ve staré instalaci proto
+    // chybí úplně a volání spadne - to není porucha telefonu, ale zastaralá
+    // appka, a tak to musí být napsané.
+    const message = String(e);
+    if (/not implemented|unimplemented|Plugin/i.test(message)) {
+      return {
+        ok: false,
+        reason: "unavailable",
+        message: "Tahle instalace appky diktování neumí. Nainstaluj novější APK.",
+      };
+    }
+    return { ok: false, reason: "error", message: message.slice(0, 120) };
   }
 }
 

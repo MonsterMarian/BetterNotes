@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useBackLayer } from "@/components/providers/use-app-back";
 import { useToast } from "@/components/providers/toast-provider";
-import { isDictationAvailable, startDictation, type DictationStart } from "@/lib/dictation";
+import { startDictation, type DictationStart } from "@/lib/dictation";
 import { tapFeedback } from "@/lib/native";
 import {
   startsSentence,
@@ -29,8 +29,12 @@ import { cn } from "@/lib/utils";
  * přes celou obrazovku. Zpět (tlačítko i gesto) ji zavře jako první vrstvu -
  * odchod z poznámky s běžícím mikrofonem by byl nepříjemný překvapák.
  *
- * Když se řeč rozpoznat nedá (chybí oprávnění, telefon rozpoznávač nemá),
- * appka to řekne a nic víc - diktování je pohodlí navíc, ne podmínka psaní.
+ * Tlačítko je vidět vždycky. Dotaz „umí tenhle telefon diktovat?" uměl
+ * odpovědět ne i tam, kde diktování šlo (starší APK bez pluginu, rozpoznávač,
+ * co se hlásí až po prvním spuštění) - a mikrofon pak z poznámky beze slova
+ * zmizel. Radši ho nabídnout a při nezdaru říct proč: chybí oprávnění, telefon
+ * rozpoznávač nemá, appka je stará. Diktování je pohodlí navíc, ne podmínka
+ * psaní.
  */
 export function VoiceMode({
   text,
@@ -43,7 +47,6 @@ export function VoiceMode({
   onChange: (text: string) => void;
 }) {
   const { toast } = useToast();
-  const [available, setAvailable] = React.useState(false);
   const [listening, setListening] = React.useState(false);
   const [caps, setCaps] = React.useState<CapsMode>("none");
   /** Poslední napsaná slova - zpětná vazba, když je poznámka odscrollovaná. */
@@ -55,16 +58,6 @@ export function VoiceMode({
   const base = React.useRef<{ text: string; at: number }>({ text: "", at: 0 });
 
   React.useEffect(() => setMounted(true), []);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    void isDictationAvailable().then((ok) => {
-      if (!cancelled) setAvailable(ok);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Odchod z poznámky uprostřed diktování nesmí nechat mikrofon běžet.
   React.useEffect(() => () => session.current?.stop?.(), []);
@@ -136,8 +129,6 @@ export function VoiceMode({
     session.current = res;
     setListening(true);
   };
-
-  if (!available) return null;
 
   return (
     <>
