@@ -217,7 +217,19 @@ export function SettingsDialog({
   const count = noteCount(state);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Nastavení">
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Nastavení"
+      /*
+        Pevná výška a místo pod obsahem, ať se dá vytáhnout nahoru.
+        Poslední volba sedí u dolní hrany přesně tam, kde má uživatel palec,
+        kterým roluje - přečíst ji znamenalo dívat se pod vlastní ruku. Výška
+        je pevná schválně: kdyby se panel měřil podle obsahu, ta rezerva by ho
+        jen nafoukla a nastavení by se pořád nedalo posunout.
+      */
+      className="h-[88dvh] pb-[calc(33dvh+var(--mw-safe-bottom))]"
+    >
       <div className="flex flex-col gap-4">
         <Section title="Vzhled">
           <ThemeToggle />
