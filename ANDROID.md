@@ -114,9 +114,7 @@ soubor `.apk.idsig`.
 
 ### Když se něco pokazí
 
-**Nastavení → Aktualizace → Zpět na verzi z APK** zahodí stažené balíky.
-
-Pojistka běží i bez zásahu: krátký skript v `<head>` (viz `src/app/layout.tsx`)
+Pojistka na rozbitý balík běží sama: krátký skript v `<head>` (viz `src/app/layout.tsx`)
 si při nasazení balíku poznamená, že se startuje. Když appka do deseti vteřin
 nenaběhne a značku nesmaže, skript se sám vrátí k verzi z APK. Je schválně mimo
 kód appky — rozbitý balík by ho jinak vůbec nespustil.

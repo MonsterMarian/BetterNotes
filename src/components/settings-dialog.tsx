@@ -15,7 +15,6 @@ import {
   currentBundleVersion,
   lastApplyError,
   pendingBundleVersion,
-  revertToBundled,
 } from "@/lib/live-update";
 import { isNative, syncStatusBar } from "@/lib/native";
 import { noteCount } from "@/lib/notes";
@@ -161,16 +160,6 @@ function UpdateSection() {
           </Button>
         ) : null}
       </div>
-
-      <Button
-        variant="ghost"
-        size="sm"
-        className="self-start"
-        title="Vrátí verzi zabalenou v APK - záchrana, když se stažená verze chová divně."
-        onClick={() => void revertToBundled()}
-      >
-        Zpět na verzi z APK
-      </Button>
     </Section>
   );
 }
