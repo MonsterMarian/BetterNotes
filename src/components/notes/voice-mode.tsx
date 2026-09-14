@@ -36,18 +36,33 @@ import { cn } from "@/lib/utils";
  * rozpoznávač nemá, appka je stará. Diktování je pohodlí navíc, ne podmínka
  * psaní.
  */
+export interface VoiceModeHandle {
+  start: () => Promise<void>;
+  stop: () => void;
+  toggle: () => void;
+  isListening: () => boolean;
+}
+
 export function VoiceMode({
   text,
   at,
   onChange,
+  autoStart,
+  onListeningChange,
+  ref,
 }: {
   text: string;
   /** Kam v textu diktát patří; null = na konec. */
   at: number | null;
   onChange: (text: string) => void;
+  /** Automaticky spustit diktování po otevření (např. přes FAB z hlavní obrazovky). */
+  autoStart?: boolean;
+  /** Změna stavu nahrávání pro okolní komponenty (např. ikonu v horní liště). */
+  onListeningChange?: (listening: boolean) => void;
+  ref?: React.Ref<VoiceModeHandle>;
 }) {
   const { toast } = useToast();
-  const [listening, setListening] = React.useState(false);
+  const [listening, setListeningState] = React.useState(false);
   const [caps, setCaps] = React.useState<CapsMode>("none");
   /** Poslední napsaná slova - zpětná vazba, když je poznámka odscrollovaná. */
   const [heard, setHeard] = React.useState("");
@@ -56,6 +71,13 @@ export function VoiceMode({
   const session = React.useRef<DictationStart | null>(null);
   /** Text a místo vložení zmrazené při spuštění - viz komentář u komponenty. */
   const base = React.useRef<{ text: string; at: number }>({ text: "", at: 0 });
+  const latestProps = React.useRef({ text, at, onChange, onListeningChange });
+  latestProps.current = { text, at, onChange, onListeningChange };
+
+  const setListening = React.useCallback((value: boolean) => {
+    setListeningState(value);
+    latestProps.current.onListeningChange?.(value);
+  }, []);
 
   React.useEffect(() => setMounted(true), []);
 
@@ -78,13 +100,15 @@ export function VoiceMode({
     session.current = null;
     setListening(false);
     setCaps("none");
-  }, []);
+  }, [setListening]);
 
   useBackLayer(listening, stop);
 
-  const start = async () => {
-    const cut = at === null || at < 0 || at > text.length ? text.length : at;
-    base.current = { text, at: cut };
+  const start = React.useCallback(async () => {
+    const currentText = latestProps.current.text;
+    const currentAt = latestProps.current.at;
+    const cut = currentAt === null || currentAt < 0 || currentAt > currentText.length ? currentText.length : currentAt;
+    base.current = { text: currentText, at: cut };
     setHeard("");
     setCaps("none");
 
@@ -96,7 +120,7 @@ export function VoiceMode({
         const written = transcribe(spoken, { sentenceStart: startsSentence(head) });
         // Mezera před diktátem, aby se nová věta nenalepila na předchozí slovo.
         const gap = head && written.text && !/\s$/.test(head) ? " " : "";
-        onChange(`${head}${gap}${written.text}${tail}`);
+        latestProps.current.onChange(`${head}${gap}${written.text}${tail}`);
         setCaps(written.caps);
         setHeard(written.text);
         // „Konec diktování" - řečený příkaz vypne mikrofon, ať se nemusí sahat
@@ -128,7 +152,32 @@ export function VoiceMode({
     void tapFeedback();
     session.current = res;
     setListening(true);
-  };
+  }, [stop, setListening, toast]);
+
+  const toggle = React.useCallback(() => {
+    if (listening) stop();
+    else void start();
+  }, [listening, start, stop]);
+
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      start,
+      stop,
+      toggle,
+      isListening: () => listening,
+    }),
+    [start, stop, toggle, listening],
+  );
+
+  const hasAutoStarted = React.useRef(false);
+  React.useEffect(() => {
+    if (autoStart && !hasAutoStarted.current) {
+      hasAutoStarted.current = true;
+      const t = setTimeout(() => void start(), 200);
+      return () => clearTimeout(t);
+    }
+  }, [autoStart, start]);
 
   return (
     <>

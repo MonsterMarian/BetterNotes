@@ -130,6 +130,10 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
 
     const listen = () => {
       if (done || closing) return;
+      if (partial) {
+        committed = join(committed, partial);
+        partial = "";
+      }
       segmentAt = Date.now();
       void SpeechRecognition.start({
         language: LANGUAGE,
@@ -141,15 +145,16 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
       }).catch(failed);
     };
 
-    /** Konec úseku: uložit, co zaznělo, a rozhodnout, jestli se pokračuje. */
+    /** Konec úseku: rozhodnout, jestli se pokračuje. */
     const segmentEnded = (message?: string) => {
       if (done) return;
-      if (partial) {
-        committed = join(committed, partial);
-        partial = "";
-        heardAt = Date.now();
+      if (closing) {
+        if (partial) {
+          committed = join(committed, partial);
+          partial = "";
+        }
+        return finish();
       }
-      if (closing) return finish();
 
       // Úsek, který skončil hned a beze slova, je porucha (obsazený mikrofon,
       // vypnutý rozpoznávač). Ticho trvá dýl, to se za poruchu nepočítá.

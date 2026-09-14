@@ -7,15 +7,17 @@ import {
   Check,
   Copy,
   ImagePlus,
+  Mic,
   Pin,
   PinOff,
   Send,
   Share2,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
 import { Share } from "@capacitor/share";
-import { VoiceMode } from "./voice-mode";
+import { VoiceMode, type VoiceModeHandle } from "./voice-mode";
 import { ImageLightbox } from "./image-lightbox";
 import { NoteBody } from "./note-body";
 import { NoteThumb } from "./note-thumb";
@@ -50,7 +52,7 @@ function plainText(title: string, text: string): string {
   return head ? `${head}\n\n${body}` : body;
 }
 
-export function NoteDetail({ noteId }: { noteId: string }) {
+export function NoteDetail({ noteId, autoVoice = false }: { noteId: string; autoVoice?: boolean }) {
   const { state, hydrated, update, togglePin, addTag, removeTag, trash } = useStore();
   const { trashAfterSync } = usePrefs();
   const { toast } = useToast();
@@ -66,6 +68,8 @@ export function NoteDetail({ noteId }: { noteId: string }) {
   const [zoom, setZoom] = React.useState<number | null>(null);
   /** Poslední pozice kurzoru v textu - kam se vloží nová fotka. */
   const caret = React.useRef<number | null>(null);
+  const voiceRef = React.useRef<VoiceModeHandle>(null);
+  const [voiceActive, setVoiceActive] = React.useState(false);
   // Tlačítko „Odeslat" se ukazuje jen přihlášenému. Nepřihlášenému by jen
   // svítilo a po ťuknutí ho poslalo do Nastavení - to je horší než ho nemít.
   const [canSend, setCanSend] = React.useState(false);
@@ -199,6 +203,19 @@ export function NoteDetail({ noteId }: { noteId: string }) {
         </Button>
 
         <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={voiceActive ? "Zastavit diktování" : "Diktovat hlasem"}
+            title={voiceActive ? "Zastavit diktování" : "Diktovat hlasem"}
+            className={cn(voiceActive && "bg-destructive/15 text-destructive animate-pulse")}
+            onClick={() => {
+              void tapFeedback();
+              voiceRef.current?.toggle();
+            }}
+          >
+            {voiceActive ? <Square className="size-4" /> : <Mic className="size-4 text-destructive" />}
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -341,8 +358,11 @@ export function NoteDetail({ noteId }: { noteId: string }) {
           Z galerie
         </Button>
         <VoiceMode
+          ref={voiceRef}
           text={note.text}
           at={caret.current}
+          autoStart={autoVoice}
+          onListeningChange={setVoiceActive}
           onChange={(text) => update(note.id, { text })}
         />
       </div>

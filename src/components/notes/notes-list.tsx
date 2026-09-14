@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, List, NotebookPen, Plus, Search, SlidersHorizontal, X, Trash2, Send } from "lucide-react";
+import { LayoutGrid, List, Mic, NotebookPen, Plus, Search, SlidersHorizontal, X, Trash2, Send } from "lucide-react";
 import { NoteCard } from "./note-card";
 import { SwipeToDelete } from "./swipe-to-delete";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,12 @@ export function NotesList() {
     void tapFeedback();
     const note = create();
     router.push(`/note/?id=${encodeURIComponent(note.id)}`);
+  };
+
+  const newVoiceNote = () => {
+    void tapFeedback();
+    const note = create();
+    router.push(`/note/?id=${encodeURIComponent(note.id)}&voice=1`);
   };
 
   const handleBulkTrash = () => {
@@ -280,10 +286,21 @@ export function NotesList() {
           </div>
         </div>
       ) : (
-        <Fab onClick={newNote} aria-label="Nová poznámka">
-          <Plus />
-          Nová
-        </Fab>
+        <div className="fixed bottom-[calc(1.5rem+var(--mw-safe-bottom))] right-[calc(1.25rem+var(--mw-safe-right))] z-30 flex items-center gap-2.5">
+          <Fab
+            onClick={newVoiceNote}
+            aria-label="Diktovat novou poznámku"
+            title="Diktovat novou poznámku"
+            className="static bottom-auto right-auto bg-card text-foreground border border-border/80 hover:bg-accent hover:text-accent-foreground shadow-lg"
+          >
+            <Mic className="size-5 text-destructive" />
+            Diktovat
+          </Fab>
+          <Fab onClick={newNote} aria-label="Nová poznámka" className="static bottom-auto right-auto">
+            <Plus />
+            Nová
+          </Fab>
+        </div>
       )}
     </div>
   );

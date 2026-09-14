@@ -9,8 +9,10 @@ import { NoteDetail } from "@/components/notes/note-detail";
  * i APK) neumí předgenerovat cesty pro id, která vzniknou až v telefonu.
  */
 function NotePageInner() {
-  const id = useSearchParams().get("id") ?? "";
-  return <NoteDetail noteId={id} />;
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id") ?? "";
+  const autoVoice = searchParams.get("voice") === "1";
+  return <NoteDetail noteId={id} autoVoice={autoVoice} />;
 }
 
 export default function NotePage() {
