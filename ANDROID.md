@@ -23,7 +23,7 @@ a build si na to sáhne sám.
 - Android SDK: `C:\Android\sdk` (platform 35 a 36, build-tools 35 a 36)
   - cesta je zapsaná v `android/local.properties` **lomítky dopředu** —
     `sdk.dir=C:\Android\sdk` se v Java properties přečte jako `C:Androidsdk`
-- JDK 21: `C:\Android\jdk\jdk-21.0.12+8`
+- JDK 21: `C:\Android\jdk\jdk-21.0.12.1+1`
   - Capacitor 8 se kompiluje na Javu 21, v systému je 17;
     build si vlastní JDK bere přes `org.gradle.java.home` v `android/gradle.properties`
 
@@ -149,7 +149,7 @@ a nainstalovat znovu, což smaže data.
 Nový klíč (jen když se ten starý ztratí):
 
 ```bash
-C:\Android\jdk\jdk-21.0.12+8\bin\keytool.exe -genkeypair -v -keystore android/betternotes.jks -alias betternotes -keyalg RSA -keysize 2048 -validity 10000
+C:\Android\jdk\jdk-21.0.12.1+1\bin\keytool.exe -genkeypair -v -keystore android/betternotes.jks -alias betternotes -keyalg RSA -keysize 2048 -validity 10000
 ```
 
 ## Když se APK nedá nainstalovat

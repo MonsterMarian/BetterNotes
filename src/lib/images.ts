@@ -14,6 +14,7 @@
  * trvalo dýl než napsání celé poznámky.
  */
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Capacitor } from "@capacitor/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { isNative } from "./native";
 import { createId } from "./utils";
@@ -138,7 +139,36 @@ export async function readImage(name: string): Promise<string | null> {
   }
 }
 
+/**
+ * Adresa pro `<img src>`. V telefonu přímá adresa souboru přes WebView - fotka
+ * nejde přes most jako base64, což u seznamu plného fotek trvalo. V prohlížeči
+ * data URL z IndexedDB. Výsledek se pamatuje; chybějící soubor (`null`) ne,
+ * ať se po obnovení zálohy fotka objeví. Když `<img>` adresu nenačte,
+ * volající sáhne po `readImage`.
+ */
+const srcCache = new Map<string, Promise<string | null>>();
+
+export function imageSrc(name: string): Promise<string | null> {
+  const cached = srcCache.get(name);
+  if (cached) return cached;
+  const src = (async () => {
+    if (!isNative()) return readImage(name);
+    try {
+      const { uri } = await Filesystem.getUri({ path: `${DIR}/${name}`, directory: Directory.Data });
+      return Capacitor.convertFileSrc(uri);
+    } catch {
+      return null;
+    }
+  })();
+  srcCache.set(name, src);
+  void src.then((value) => {
+    if (value === null) srcCache.delete(name);
+  });
+  return src;
+}
+
 export async function deleteImage(name: string): Promise<void> {
+  srcCache.delete(name);
   try {
     if (isNative()) {
       await Filesystem.deleteFile({ path: `${DIR}/${name}`, directory: Directory.Data });
@@ -198,7 +228,9 @@ function filePickerPhoto(): Promise<string | null> {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
+    let picked = false;
     input.onchange = () => {
+      picked = true;
       const file = input.files?.[0];
       if (!file) return resolve(null);
       const reader = new FileReader();
@@ -207,11 +239,11 @@ function filePickerPhoto(): Promise<string | null> {
       reader.readAsDataURL(file);
     };
     // Zrušený dialog neohlásí nic, takže by promise visel navždy. Pojistka
-    // po návratu fokusu ho ukončí; když soubor přece jen přijde, `onchange`
-    // doběhne první a resolve se podruhé neuplatní.
+    // po návratu fokusu ho ukončí - jen když `onchange` nepřišel, čtení
+    // velké fotky trvá déle než 800 ms.
     window.addEventListener(
       "focus",
-      () => setTimeout(() => resolve(null), 800),
+      () => setTimeout(() => !picked && resolve(null), 800),
       { once: true },
     );
     input.click();

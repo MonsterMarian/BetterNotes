@@ -50,3 +50,33 @@ describe("parsePrefs", () => {
     );
   });
 });
+
+describe("nová nastavení", () => {
+  it("staré nastavení dostane nové výchozí hodnoty", () => {
+    expect(parsePrefs({ view: "grid", order: "created", trashAfterSync: true, supabaseUrl: "" })).toEqual({
+      ...DEFAULT_PREFS,
+      view: "grid",
+      order: "created",
+      trashAfterSync: true,
+    });
+    expect(DEFAULT_PREFS).toMatchObject({
+      haptics: true,
+      sinkChecked: true,
+      editorFont: "sans",
+      lastBackupAt: "",
+      backupNudgeDismissedAt: "",
+    });
+  });
+
+  it("neznámé hodnoty odmítne", () => {
+    expect(
+      parsePrefs({ haptics: "ano", sinkChecked: 1, editorFont: "comic", lastBackupAt: "včera", backupNudgeDismissedAt: 5 }),
+    ).toEqual(DEFAULT_PREFS);
+  });
+
+  it("známé hodnoty nechá", () => {
+    expect(
+      parsePrefs({ haptics: false, sinkChecked: false, editorFont: "serif", lastBackupAt: "2026-11-01T10:00:00.000Z" }),
+    ).toMatchObject({ haptics: false, sinkChecked: false, editorFont: "serif", lastBackupAt: "2026-11-01T10:00:00.000Z" });
+  });
+});

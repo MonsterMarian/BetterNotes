@@ -1,123 +1,146 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
 import { NoteThumb } from "./note-thumb";
-import { splitNoteBody } from "@/lib/inline-images";
+import { MdRender, caretAtPoint, lineEndAt } from "@/components/editor/md-render";
+import { bodyParts, spliceText } from "@/components/editor/body-parts";
+import { SegmentEditor } from "@/components/editor/segment-editor";
+import { cn } from "@/lib/utils";
 
 /**
- * Tělo poznámky: text a fotky v jednom sledu, jako v Google Docs.
+ * Tělo poznámky: text a fotky v jednom sledu.
  *
- * Dva režimy jedné plochy. Když se needituje, vykreslí se odstavce a mezi nimi
- * fotky na svých místech. Klepnutí přepne na obyčejné textové pole, kde jsou
- * vidět syrové značky `![](jméno)` - značka se dá smazat, přesunout, cokoliv.
+ * Dva režimy jedné plochy. Čtení vykreslí markdown a mezi odstavci fotky na
+ * jejich místech; zaškrtávátka jdou odklikat bez klávesnice. Psaní dá každému
+ * textovému kusu mezi fotkami vlastní pole, takže značky `![](jméno)` nikdy
+ * nejsou vidět a nedají se omylem rozbít.
  *
- * Proč ne fotky přímo v editoru: to by znamenalo `contenteditable`, a s ním
- * vlastní správu kurzoru, schránky a Android klávesnice. Textové pole psaní
- * nijak nemění a fotka je vidět hned, jak se od poznámky odejde.
+ * Proč ne `contenteditable`: s ním by appka musela sama spravovat kurzor,
+ * schránku i Android klávesnici. Průhledné pole nad zrcadlem píše jako
+ * obyčejný input a vypadá jako formátovaný text.
+ *
+ * Všechny pozice, které odsud odcházejí, jsou globální (do celého `text`).
  */
 export function NoteBody({
   text,
-  onChange,
+  editing,
+  readOnly,
+  serif,
+  onTextChange,
+  onSelectionChange,
+  onTapCaret,
+  onEnterEdit,
+  onToggleTask,
   onOpenImage,
-  caretRef,
+  onRemoveImage,
+  ref,
 }: {
   text: string;
-  onChange: (text: string) => void;
-  /** Klepnutí na fotku v textu - otevře lupu. */
+  editing: boolean;
+  /** Během diktování: text píše mikrofon, ne prsty. */
+  readOnly?: boolean;
+  serif?: boolean;
+  onTextChange: (next: string, selStart: number, selEnd: number) => void;
+  onSelectionChange: (selStart: number, selEnd: number) => void;
+  /** Klepnutí do pole v režimu psaní (kvůli zaškrtnutí přes `- [ ]`). */
+  onTapCaret: (selStart: number, selEnd: number) => void;
+  /** Klepnutí na text v režimu čtení - kam posadit kurzor. */
+  onEnterEdit: (at: number) => void;
+  onToggleTask: (at: number) => void;
   onOpenImage: (name: string) => void;
-  /**
-   * Poslední známá pozice kurzoru. Drží se i po odchodu z pole: tlačítko
-   * „Vyfotit" pole nejdřív rozostří a teprve pak se ptá, kam fotku vložit.
-   */
-  caretRef?: React.MutableRefObject<number | null>;
+  onRemoveImage: (name: string) => void;
+  ref?: React.Ref<HTMLDivElement>;
 }) {
-  const [editing, setEditing] = React.useState(false);
-  const ref = React.useRef<HTMLTextAreaElement>(null);
-  /** Kam posadit kurzor po přepnutí do psaní; null = na konec. */
-  const caret = React.useRef<number | null>(null);
+  const router = useRouter();
+  const parts = React.useMemo(() => bodyParts(text), [text]);
+  const openTag = React.useCallback(
+    (tag: string) => router.push(`/?tag=${encodeURIComponent(tag)}`),
+    [router],
+  );
 
-  const blocks = React.useMemo(() => splitNoteBody(text), [text]);
+  const image = (name: string, alt: string, key: string) => (
+    <div key={key} className="relative">
+      <button
+        type="button"
+        onClick={() => onOpenImage(name)}
+        aria-label="Zvětšit fotku"
+        className="block w-full overflow-hidden rounded-lg"
+      >
+        <NoteThumb name={name} alt={alt || "Fotka v poznámce"} className="w-full rounded-lg !object-contain" />
+      </button>
+      {editing ? (
+        <button
+          type="button"
+          aria-label="Odebrat fotku"
+          onClick={() => onRemoveImage(name)}
+          className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-full bg-inverse-surface/80 text-inverse-on-surface"
+        >
+          <X className="size-4" />
+        </button>
+      ) : null}
+    </div>
+  );
 
-  React.useEffect(() => {
-    if (!editing) return;
-    const field = ref.current;
-    if (!field) return;
-    const at = caret.current ?? field.value.length;
-    field.focus();
-    field.setSelectionRange(at, at);
-    caret.current = null;
-  }, [editing]);
-
-  const edit = (at: number | null) => {
-    caret.current = at;
-    if (caretRef) caretRef.current = at;
-    setEditing(true);
-  };
-
-  const rememberCaret = () => {
-    if (caretRef && ref.current) caretRef.current = ref.current.selectionStart;
-  };
-
-  if (editing || blocks.length === 0) {
+  if (editing) {
+    const firstText = parts.find((p) => p.kind === "text");
     return (
-      <textarea
-        ref={ref}
-        value={text}
-        onChange={(e) => {
-          onChange(e.target.value);
-          rememberCaret();
-        }}
-        onSelect={rememberCaret}
-        onBlur={() => {
-          rememberCaret();
-          setEditing(false);
-        }}
-        placeholder="Piš…"
-        aria-label="Text poznámky"
-        // Vysoké pole schválně: poznámka se píše na celou obrazovku,
-        // ne do řádku, který se rozrůstá pod prstem.
-        className="min-h-[45vh] w-full resize-none bg-transparent text-[0.95rem] leading-relaxed outline-none placeholder:text-muted-foreground"
-      />
+      <div ref={ref} className={cn("prose-note flex min-h-[45vh] flex-1 flex-col gap-3", serif && "serif")}>
+        {parts.map((part, i) => {
+          if (part.kind === "image") return image(part.name, part.alt, `i${i}`);
+          const value = text.slice(part.start, part.end);
+          // Globální pozice: poprvé napsaný znak může přinést oddělovač `pre`.
+          const global = (local: number, next: string) => spliceText(text, part, next).offset + local;
+          return (
+            <SegmentEditor
+              // Klíč podle pořadí: pole zůstane stejné, i když se text nad ním posune.
+              key={`t${i}`}
+              value={value}
+              start={part.start}
+              readOnly={readOnly}
+              placeholder={part === firstText && !text.trim() ? "Piš…" : undefined}
+              onEdit={(next, s, e) => onTextChange(spliceText(text, part, next).text, global(s, next), global(e, next))}
+              onSelect={(s, e) => onSelectionChange(global(s, value), global(e, value))}
+              onTap={(s, e) => onTapCaret(global(s, value), global(e, value))}
+            />
+          );
+        })}
+        {/* Prázdné místo pod textem: klepnutí pokračuje v psaní na konci. */}
+        <div aria-hidden className="min-h-16 flex-1" onClick={() => onEnterEdit(text.length)} />
+      </div>
     );
   }
 
   return (
-    <div className="flex min-h-[45vh] flex-col gap-3">
-      {blocks.map((block, i) =>
-        block.kind === "text" ? (
-          <div
-            key={`t${block.at}`}
-            role="textbox"
-            tabIndex={0}
-            aria-label="Text poznámky"
-            // Kurzor sedne na začátek klepnutého odstavce, ne na konec
-            // poznámky - jinak by oprava překlepu nahoře znamenala projet
-            // půl obrazovky zpátky.
-            onClick={() => edit(block.at)}
-            onFocus={() => edit(block.at)}
-            className="whitespace-pre-wrap break-words text-[0.95rem] leading-relaxed outline-none"
-          >
-            {block.text}
-          </div>
-        ) : (
-          <button
-            key={`i${block.at}${i}`}
-            type="button"
-            onClick={() => onOpenImage(block.name)}
-            aria-label="Zvětšit fotku"
-            className="block w-full overflow-hidden rounded-lg border"
-          >
-            <NoteThumb name={block.name} alt={block.alt || "Fotka v poznámce"} className="w-full !object-contain" />
-          </button>
-        ),
-      )}
-
+    <div
+      ref={ref}
+      className={cn("prose-note flex min-h-[45vh] flex-1 cursor-text flex-col gap-3", serif && "serif")}
+      onClick={(e) => onEnterEdit(caretAtPoint(e.clientX, e.clientY) ?? lineEndAt(e.target) ?? text.length)}
+    >
+      {parts.map((part, i) => {
+        if (part.kind === "image") {
+          return (
+            // Fotka si klepnutí nechá pro sebe, do psaní nepřepíná.
+            <div key={`i${i}`} onClick={(e) => e.stopPropagation()}>
+              {image(part.name, part.alt, `i${i}`)}
+            </div>
+          );
+        }
+        const value = text.slice(part.start, part.end);
+        if (!value.trim()) return null;
+        return (
+          <MdRender
+            key={`t${i}`}
+            text={value}
+            base={part.start}
+            onToggleTask={onToggleTask}
+            onOpenTag={openTag}
+          />
+        );
+      })}
       {/* Klepnutí pod poslední blok pokračuje v psaní na konci, jako v editoru. */}
-      <div
-        onClick={() => edit(null)}
-        aria-hidden
-        className="min-h-16 flex-1 cursor-text"
-      />
+      <div aria-hidden className="min-h-16 flex-1" />
     </div>
   );
 }

@@ -32,13 +32,29 @@ export interface Prefs {
    * dlouhý JWT.
    */
   supabaseUrl: string;
+  /** Jemná vibrace při mazání, zaškrtnutí a výběru. */
+  haptics: boolean;
+  /** Zaškrtnutý úkol sjede na konec svého seznamu. */
+  sinkChecked: boolean;
+  editorFont: EditorFont;
+  /** Kdy se naposledy povedl export zálohy (ISO), prázdné = nikdy. */
+  lastBackupAt: string;
+  /** Kdy uživatel odložil připomínku zálohy (ISO), prázdné = nikdy. */
+  backupNudgeDismissedAt: string;
 }
+
+export type EditorFont = "sans" | "serif";
 
 export const DEFAULT_PREFS: Prefs = {
   view: "list",
   order: "updated",
   trashAfterSync: false,
   supabaseUrl: "",
+  haptics: true,
+  sinkChecked: true,
+  editorFont: "sans",
+  lastBackupAt: "",
+  backupNudgeDismissedAt: "",
 };
 
 /**
@@ -76,7 +92,19 @@ export function parsePrefs(raw: unknown): Prefs {
     order: isOrder(r.order) ? r.order : DEFAULT_PREFS.order,
     trashAfterSync: r.trashAfterSync === true,
     supabaseUrl: typeof r.supabaseUrl === "string" ? normalizeSupabaseUrl(r.supabaseUrl) : "",
+    haptics: typeof r.haptics === "boolean" ? r.haptics : DEFAULT_PREFS.haptics,
+    sinkChecked: typeof r.sinkChecked === "boolean" ? r.sinkChecked : DEFAULT_PREFS.sinkChecked,
+    editorFont: r.editorFont === "serif" ? "serif" : "sans",
+    lastBackupAt: isoOrEmpty(r.lastBackupAt),
+    backupNudgeDismissedAt: isoOrEmpty(r.backupNudgeDismissedAt),
   };
+}
+
+/** Rozbité datum by připomínku zálohy zaseklo navždy - radši "nikdy". */
+function isoOrEmpty(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? "" : new Date(time).toISOString();
 }
 
 let cache: Prefs | null = null;
@@ -129,20 +157,29 @@ export function replacePrefs(prefs: Prefs): void {
 
 export const THEME_KEY = "betternotes:theme";
 
-export type Theme = "dark" | "light";
+/** "system" = žádný zápis v THEME_KEY, rozhoduje nastavení telefonu. */
+export type Theme = "dark" | "light" | "system";
 
 /** Skript v `layout.tsx` nasazuje téma před prvním paintem; tohle je jen zápis. */
 export function applyTheme(theme: Theme): void {
   if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle("dark", theme === "dark");
+  const dark =
+    theme === "system" ? window.matchMedia("(prefers-color-scheme: dark)").matches : theme === "dark";
+  document.documentElement.classList.toggle("dark", dark);
   try {
-    window.localStorage.setItem(THEME_KEY, theme);
+    if (theme === "system") window.localStorage.removeItem(THEME_KEY);
+    else window.localStorage.setItem(THEME_KEY, theme);
   } catch {
     // soukromý režim - téma vydrží do zavření appky
   }
 }
 
 export function currentTheme(): Theme {
-  if (typeof document === "undefined") return "dark";
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+  if (typeof window === "undefined") return "system";
+  try {
+    const theme = window.localStorage.getItem(THEME_KEY);
+    return theme === "dark" || theme === "light" ? theme : "system";
+  } catch {
+    return "system";
+  }
 }

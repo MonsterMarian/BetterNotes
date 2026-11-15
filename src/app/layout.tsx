@@ -10,10 +10,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#FDFDFD" },
-    { media: "(prefers-color-scheme: dark)", color: "#09090B" },
-  ],
+  // Jen tmavě, jako ostatní appky. colorScheme brání vynucenému "auto dark" Chromu.
+  themeColor: "#000000",
+  colorScheme: "dark",
   // Nativní appka: obsah až do rohů, žádné zoomování dvojklikem.
   width: "device-width",
   initialScale: 1,
@@ -22,8 +21,8 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-/** Nasadí téma před prvním paintem, aby neproblikl světlý podklad. */
-const themeScript = `try{var d=document.documentElement;var t=localStorage.getItem("betternotes:theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))d.classList.add("dark")}catch(e){}`;
+/** Appka je jen tmavá; třída `dark` zůstává kvůli `dark:` variantám a stavové liště. */
+const themeScript = `try{document.documentElement.classList.add("dark")}catch(e){}`;
 
 /**
  * Záchranná brzda živých aktualizací.
@@ -48,7 +47,8 @@ if(localStorage.getItem("betternotes:ota:booting")){
       localStorage.removeItem("betternotes:ota:pending");
       // Bez .then: setServerBasePath se z principu nedočká odpovědi, protože
       // překreslení WebView je ve frontě dřív. Voláme a překreslíme sami.
-      w.setServerBasePath({path:""});
+      // Zpět na soubory z APK. setServerBasePath({path:""}) by servíroval kořen disku.
+      w.setServerAssetPath({path:"public"});
       w.persistServerBasePath();
       setTimeout(function(){ window.location.reload(); }, 400);
     }catch(e){}
@@ -60,11 +60,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="cs" suppressHydrationWarning>
       <head>
+        <meta name="color-scheme" content="light dark" />
         <meta name="version" content={process.env.NEXT_PUBLIC_BUNDLE_VERSION || "dev"} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: rescueScript }} />
       </head>
-      <body className="min-h-screen antialiased">
+      <body className="min-h-dvh antialiased">
         <StoreProvider>
           <ToastProvider>
             <AppShell>{children}</AppShell>

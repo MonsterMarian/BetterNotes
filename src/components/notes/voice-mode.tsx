@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { CircleHelp, Mic, Square } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { FloatingToolbar, ToolbarButton } from "@/components/ui/floating-toolbar";
 import { useBackLayer } from "@/components/providers/use-app-back";
 import { useToast } from "@/components/providers/toast-provider";
 import { startDictation, type DictationStart } from "@/lib/dictation";
-import { tapFeedback } from "@/lib/native";
+import { haptic } from "@/lib/native";
 import {
   startsSentence,
   transcribe,
@@ -24,17 +25,16 @@ import { cn } from "@/lib/utils";
  * rozpoznávač hlásí každé nové slovo a poznámka se z celého přepisu pokaždé
  * složí znovu. Proto se při spuštění zmrazí `base` - původní text a místo
  * kurzoru. Bez toho by se každá průběžná verze v poznámce naskládala za sebe.
+ * Ze stejného důvodu je editor během diktování jen ke čtení: co by se napsalo
+ * prsty, další přepis by přemazal.
  *
- * Že se poslouchá, musí být vidět i po zavření klávesnice, proto lišta dole
- * přes celou obrazovku. Zpět (tlačítko i gesto) ji zavře jako první vrstvu -
+ * Že se poslouchá, musí být vidět i po zavření klávesnice, proto výrazná
+ * plovoucí lišta dole. Zpět (tlačítko i gesto) ji zavře jako první vrstvu -
  * odchod z poznámky s běžícím mikrofonem by byl nepříjemný překvapák.
  *
- * Tlačítko je vidět vždycky. Dotaz „umí tenhle telefon diktovat?" uměl
- * odpovědět ne i tam, kde diktování šlo (starší APK bez pluginu, rozpoznávač,
- * co se hlásí až po prvním spuštění) - a mikrofon pak z poznámky beze slova
- * zmizel. Radši ho nabídnout a při nezdaru říct proč: chybí oprávnění, telefon
- * rozpoznávač nemá, appka je stará. Diktování je pohodlí navíc, ne podmínka
- * psaní.
+ * Spouští se z lišty editoru (přes `ref`) nebo samo z `?voice=1`. Dotaz
+ * „umí tenhle telefon diktovat?" se předem neklade: uměl odpovědět ne i tam,
+ * kde diktování šlo. Radši ho nabídnout a při nezdaru říct proč.
  */
 export interface VoiceModeHandle {
   start: () => Promise<void>;
@@ -43,21 +43,27 @@ export interface VoiceModeHandle {
   isListening: () => boolean;
 }
 
+/** Jak dlouho po posledním slově se sloupečky ještě hýbou. */
+const PULSE_MS = 600;
+
 export function VoiceMode({
   text,
-  at,
+  caretRef,
   onChange,
   autoStart,
   onListeningChange,
   ref,
 }: {
   text: string;
-  /** Kam v textu diktát patří; null = na konec. */
-  at: number | null;
+  /**
+   * Kam v textu diktát patří; null = na konec. Ref, ne číslo: kurzor se
+   * hýbe bez překreslení a diktát musí sednout tam, kde je teď (I11).
+   */
+  caretRef: React.RefObject<number | null>;
   onChange: (text: string) => void;
   /** Automaticky spustit diktování po otevření (např. přes FAB z hlavní obrazovky). */
   autoStart?: boolean;
-  /** Změna stavu nahrávání pro okolní komponenty (např. ikonu v horní liště). */
+  /** Změna stavu nahrávání pro okolní komponenty (editor jen ke čtení, lišta). */
   onListeningChange?: (listening: boolean) => void;
   ref?: React.Ref<VoiceModeHandle>;
 }) {
@@ -66,13 +72,17 @@ export function VoiceMode({
   const [caps, setCaps] = React.useState<CapsMode>("none");
   /** Poslední napsaná slova - zpětná vazba, když je poznámka odscrollovaná. */
   const [heard, setHeard] = React.useState("");
+  /** Počítadlo přepisů - sloupečky se hýbou s každým slovem, není to měřič hlasitosti. */
+  const [pulse, setPulse] = React.useState(0);
+  const [active, setActive] = React.useState(false);
   const [helpOpen, setHelpOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const session = React.useRef<DictationStart | null>(null);
+  const idle = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Text a místo vložení zmrazené při spuštění - viz komentář u komponenty. */
   const base = React.useRef<{ text: string; at: number }>({ text: "", at: 0 });
-  const latestProps = React.useRef({ text, at, onChange, onListeningChange });
-  latestProps.current = { text, at, onChange, onListeningChange };
+  const latestProps = React.useRef({ text, onChange, onListeningChange });
+  latestProps.current = { text, onChange, onListeningChange };
 
   const setListening = React.useCallback((value: boolean) => {
     setListeningState(value);
@@ -82,7 +92,13 @@ export function VoiceMode({
   React.useEffect(() => setMounted(true), []);
 
   // Odchod z poznámky uprostřed diktování nesmí nechat mikrofon běžet.
-  React.useEffect(() => () => session.current?.stop?.(), []);
+  React.useEffect(
+    () => () => {
+      session.current?.stop?.();
+      if (idle.current) clearTimeout(idle.current);
+    },
+    [],
+  );
 
   // Lišta překrývá spodek stránky - bez odsazení by pod ní zůstal schovaný
   // konec poznámky, tedy zrovna to, co se právě diktuje.
@@ -96,17 +112,19 @@ export function VoiceMode({
   }, [listening]);
 
   const stop = React.useCallback(() => {
+    const wasRunning = session.current !== null;
     session.current?.stop?.();
     session.current = null;
     setListening(false);
     setCaps("none");
+    if (wasRunning) haptic("success");
   }, [setListening]);
 
   useBackLayer(listening, stop);
 
   const start = React.useCallback(async () => {
     const currentText = latestProps.current.text;
-    const currentAt = latestProps.current.at;
+    const currentAt = caretRef.current;
     const cut = currentAt === null || currentAt < 0 || currentAt > currentText.length ? currentText.length : currentAt;
     base.current = { text: currentText, at: cut };
     setHeard("");
@@ -123,6 +141,10 @@ export function VoiceMode({
         latestProps.current.onChange(`${head}${gap}${written.text}${tail}`);
         setCaps(written.caps);
         setHeard(written.text);
+        setPulse((p) => p + 1);
+        setActive(true);
+        if (idle.current) clearTimeout(idle.current);
+        idle.current = setTimeout(() => setActive(false), PULSE_MS);
         // „Konec diktování" - řečený příkaz vypne mikrofon, ať se nemusí sahat
         // na telefon uprostřed věty.
         if (written.stop) stop();
@@ -131,7 +153,12 @@ export function VoiceMode({
         session.current = null;
         setListening(false);
         setCaps("none");
-        if (!reason) return;
+        if (!reason) {
+          // Vypnutí po dlouhém tichu - bez hlášky by to vypadalo jako porucha.
+          if (message) toast({ title: "Diktování skončilo", description: message });
+          return;
+        }
+        haptic("error");
         toast({
           tone: "warn",
           title: reason === "denied" ? "Mikrofon není povolený" : "Diktování skončilo",
@@ -141,6 +168,7 @@ export function VoiceMode({
     });
 
     if (!res.ok) {
+      haptic("error");
       toast({
         tone: "warn",
         title: res.reason === "denied" ? "Mikrofon není povolený" : "Diktování nejde spustit",
@@ -149,10 +177,10 @@ export function VoiceMode({
       return;
     }
 
-    void tapFeedback();
+    haptic("press");
     session.current = res;
     setListening(true);
-  }, [stop, setListening, toast]);
+  }, [stop, setListening, toast, caretRef]);
 
   const toggle = React.useCallback(() => {
     if (listening) stop();
@@ -170,73 +198,54 @@ export function VoiceMode({
     [start, stop, toggle, listening],
   );
 
+  // Pojistka se zapíše až při skutečném spuštění: StrictMode efekt hned
+  // odmontuje a časovač zruší, takže zápis předem by start zablokoval (I9).
   const hasAutoStarted = React.useRef(false);
   React.useEffect(() => {
-    if (autoStart && !hasAutoStarted.current) {
+    if (!autoStart || hasAutoStarted.current) return;
+    const t = setTimeout(() => {
       hasAutoStarted.current = true;
-      const t = setTimeout(() => void start(), 200);
-      return () => clearTimeout(t);
-    }
+      void start();
+    }, 200);
+    return () => clearTimeout(t);
   }, [autoStart, start]);
 
   return (
     <>
-      <Button
-        variant={listening ? "destructive" : "secondary"}
-        className={cn("flex-1", listening && "animate-pulse")}
-        aria-pressed={listening}
-        onClick={() => (listening ? stop() : void start())}
-      >
-        {listening ? <Square /> : <Mic />}
-        {listening ? "Zastavit" : "Diktovat"}
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Hlasové příkazy"
-        title="Hlasové příkazy"
-        onClick={() => setHelpOpen(true)}
-      >
-        <CircleHelp />
-      </Button>
-
       {mounted && listening
         ? createPortal(
-            <div className="fixed inset-x-0 bottom-0 z-[60] border-t bg-card/95 px-4 pb-[calc(0.75rem+var(--mw-safe-bottom))] pt-3 shadow-lg backdrop-blur">
-              <div className="mx-auto flex max-w-md items-center gap-3">
-                <span className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive">
-                  <span className="absolute inset-0 animate-ping rounded-full bg-destructive/20" />
-                  <Mic className="size-4" />
+            <FloatingToolbar vibrant>
+              <div className="flex min-w-0 flex-1 items-center gap-3 pl-3">
+                <span aria-hidden className="flex h-6 items-center gap-[3px]">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <span
+                      key={i}
+                      className="w-[3px] rounded-full bg-on-primary-container transition-[height] duration-150"
+                      style={{ height: active ? `${30 + ((pulse * 7 + i * 13) % 5) * 17}%` : "20%" }}
+                    />
+                  ))}
                 </span>
 
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 text-xs font-medium">
+                <div className="flex min-w-0 max-w-64 flex-1 flex-col text-on-primary-container">
+                  <p className="flex items-center gap-2 text-label-md">
                     Poslouchám…
                     {caps !== "none" ? (
-                      <span className="rounded-full bg-mark px-2 py-0.5 text-[0.65rem] font-semibold text-mark-foreground">
+                      <span className="rounded-full bg-highlight px-2 text-label-sm text-on-highlight">
                         {caps === "all" ? "VELKÁ PÍSMENA" : "Velké písmeno"}
                       </span>
                     ) : null}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className={cn("truncate text-body-sm", heard && "italic")}>
                     {heard ? preview(heard) : "Mluv, text se píše rovnou do poznámky."}
                   </p>
                 </div>
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Hlasové příkazy"
-                  onClick={() => setHelpOpen(true)}
-                >
-                  <CircleHelp />
-                </Button>
-                <Button variant="destructive" onClick={stop}>
-                  <Square />
-                  Konec
-                </Button>
               </div>
-            </div>,
+
+              <ToolbarButton icon={<CircleHelp />} label="Hlasové příkazy" onClick={() => setHelpOpen(true)} />
+              <Button variant="filled" className="mr-2 shrink-0" onClick={stop}>
+                Hotovo
+              </Button>
+            </FloatingToolbar>,
             document.body,
           )
         : null}
@@ -250,11 +259,9 @@ export function VoiceMode({
         <div className="flex flex-col gap-4">
           {VOICE_COMMAND_HELP.map((group) => (
             <div key={group.group} className="flex flex-col gap-1">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {group.group}
-              </h3>
+              <h3 className="text-title-sm text-primary">{group.group}</h3>
               {group.items.map((item) => (
-                <div key={item.say} className="flex items-baseline justify-between gap-3 text-sm">
+                <div key={item.say} className="flex items-baseline justify-between gap-3 text-body-md">
                   <span className="min-w-0 truncate">„{item.say}“</span>
                   <span className="shrink-0 font-medium">{item.shows}</span>
                 </div>

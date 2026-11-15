@@ -2,127 +2,214 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
-  --radius: 0.625rem;
+/*
+ * House style (mpL / MicroWins): jen tmavě. Černé pozadí, bílý text, jediný
+ * akcent jantar #F5A33A - jen na to, co se dá zmáčknout, aktivní stav a fokus.
+ * Plochy jsou bílá v pevných průhlednostech nad černou, tady předpočítané
+ * na plné barvy (3.5 % = #090909, 6 % = #0f0f0f, 8 % = #141414, 9 % = #171717,
+ * 11 % = #1c1c1c, 14 % = #242424, 16 % = #292929), ať se vrstvy nesčítají.
+ * Tlumený text je míchaný, ne průhledný (#949494) - průhledné tahy ikon by se
+ * na křížení zesvětlovaly.
+ */
+:root,
+.dark {
+  color-scheme: dark;
 
-  --background: oklch(0.995 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
+  --surface: #000000;
+  --surface-lowest: #000000;
+  --surface-low: #090909;
+  --surface-container: #0f0f0f;
+  --surface-high: #141414;
+  --surface-highest: #1c1c1c;
+  --on-surface: #ffffff;
+  --on-surface-variant: #949494;
+  --outline: #292929;
+  --outline-variant: #1c1c1c;
+  --primary: #f5a33a;
+  --on-primary: #000000;
+  --primary-container: #2b1d0b;
+  --on-primary-container: #f5a33a;
+  --tertiary: #f5a33a;
+  --highlight: #4a3313;
+  --on-highlight: #ffd9a6;
+  --inverse-surface: #1c1c1c;
+  --inverse-on-surface: #ffffff;
+  --inverse-primary: #f5a33a;
+  /* "I chyby mluví žlutě" (mpL) - destruktivní akce nesou jantar, ne červenou. */
+  --error: #f5a33a;
+  --on-error: #000000;
+  --error-container: #2b1d0b;
+  --on-error-container: #f5a33a;
+  --scrim: rgb(0 0 0 / 0.6);
 
-  /* Jantar zvýrazňuje připnuté poznámky a štítky - nic víc. */
-  --mark: oklch(0.72 0.16 62);
-  --mark-foreground: oklch(0.99 0 0);
-  --mark-muted: oklch(0.96 0.035 75);
-  --mark-muted-foreground: oklch(0.46 0.11 55);
+  /* Hloubku dělají rámečky; stín jen u plovoucích prvků (FAB, lišta, sheet). */
+  --shadow-2: 0 4px 16px rgb(0 0 0 / 0.5);
+  --shadow-3: 0 8px 24px rgb(0 0 0 / 0.55);
 
-  /*
-   * Barva appky: zelená. Nese hlavní akci (nová poznámka, uložit, odeslat)
-   * a nic jiného - když svítí zelená, dá se na ni ťuknout. Odstín 145° leží
-   * tam, kde má gamut zelené špičku, takže snese vysokou sytost, aniž by se
-   * v sRGB usekla.
-   */
-  --progress: oklch(0.66 0.19 145);
-  --progress-foreground: oklch(0.99 0 0);
-  --progress-muted: oklch(0.95 0.05 145);
-  --progress-muted-foreground: oklch(0.46 0.13 145);
-  --track: oklch(0.9 0.004 286.32);
+  /* Pohyb jako v ostatních appkách: krátké ease-out, žádné houpání. */
+  --spring-fast: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-spring-fast: 180ms;
+  --spring-default: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-spring-default: 240ms;
+  --spring-slow: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-spring-slow: 320ms;
+  --effects: ease-out;
+  --dur-effects: 160ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized-decel: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-emphasized-accel: ease-in;
+  /* Odezva na úspěch (zaškrtnutí, pop): jediné místo s přestřelem. */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.19 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.19 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.552 0.016 285.938);
+@supports not (transition-timing-function: linear(0, 1)) {
+  :root {
+    --spring-fast: var(--ease-emphasized-decel);
+    --spring-default: var(--ease-emphasized-decel);
+    --spring-slow: var(--ease-emphasized-decel);
+    --effects: var(--ease-standard);
+  }
+}
 
-  --mark: oklch(0.78 0.15 68);
-  --mark-foreground: oklch(0.17 0.02 60);
-  --mark-muted: oklch(0.32 0.06 66);
-  --mark-muted-foreground: oklch(0.88 0.09 75);
-
-  --progress: oklch(0.82 0.2 145);
-  --progress-foreground: oklch(0.17 0.04 145);
-  --progress-muted: oklch(0.31 0.08 145);
-  --progress-muted-foreground: oklch(0.89 0.16 145);
-  --track: oklch(1 0 0 / 14%);
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --spring-fast: var(--ease-standard);
+    --spring-default: var(--ease-standard);
+    --spring-slow: var(--ease-standard);
+  }
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
+  --color-surface: var(--surface);
+  --color-surface-lowest: var(--surface-lowest);
+  --color-surface-low: var(--surface-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-high: var(--surface-high);
+  --color-surface-highest: var(--surface-highest);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
   --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  --color-on-primary: var(--on-primary);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-tertiary: var(--tertiary);
+  --color-highlight: var(--highlight);
+  --color-on-highlight: var(--on-highlight);
+  --color-inverse-surface: var(--inverse-surface);
+  --color-inverse-on-surface: var(--inverse-on-surface);
+  --color-inverse-primary: var(--inverse-primary);
+  --color-error: var(--error);
+  --color-on-error: var(--on-error);
+  --color-error-container: var(--error-container);
+  --color-on-error-container: var(--on-error-container);
+  --color-scrim: var(--scrim);
 
-  --color-mark: var(--mark);
-  --color-mark-foreground: var(--mark-foreground);
-  --color-mark-muted: var(--mark-muted);
-  --color-mark-muted-foreground: var(--mark-muted-foreground);
+  /* Staré názvy, ať nepřepsaný kód vykreslí rozumně. Pryč v P1. */
+  --color-background: var(--surface);
+  --color-foreground: var(--on-surface);
+  --color-card: var(--surface-low);
+  --color-card-foreground: var(--on-surface);
+  --color-popover: var(--surface-high);
+  --color-popover-foreground: var(--on-surface);
+  --color-primary-foreground: var(--on-primary);
+  --color-secondary: var(--surface-high);
+  --color-secondary-foreground: var(--on-surface);
+  --color-muted: var(--surface-high);
+  --color-muted-foreground: var(--on-surface-variant);
+  --color-accent: var(--surface-high);
+  --color-accent-foreground: var(--on-surface);
+  --color-destructive: var(--error);
+  --color-destructive-foreground: var(--on-error);
+  --color-border: var(--outline-variant);
+  --color-input: var(--outline-variant);
+  --color-ring: var(--primary);
+  --color-progress: var(--primary);
+  --color-progress-foreground: var(--on-primary);
+  --color-progress-muted: var(--primary-container);
+  --color-progress-muted-foreground: var(--on-primary-container);
+  --color-mark: var(--tertiary);
+  --color-mark-foreground: var(--surface-lowest);
+  --color-mark-muted: var(--highlight);
+  --color-mark-muted-foreground: var(--on-highlight);
+  --color-track: var(--surface-highest);
 
-  --color-progress: var(--progress);
-  --color-progress-foreground: var(--progress-foreground);
-  --color-progress-muted: var(--progress-muted);
-  --color-progress-muted-foreground: var(--progress-muted-foreground);
-  --color-track: var(--track);
+}
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+@theme {
+  /* Jen systémová písma - offline appka nesmí nic stahovat. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-serif: "Noto Serif", "Droid Serif", Georgia, serif;
+  --font-mono: ui-monospace, "Roboto Mono", "Droid Sans Mono", Menlo, Consolas, monospace;
 
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    "Noto Sans", sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "Segoe UI Mono", Menlo, Consolas, monospace;
+  --radius-xs: 4px;
+  /* --radius 0.625rem jako v ostatních appkách: sm 6, md 8, lg 10, xl 14, 2xl 16. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-lg-plus: 12px;
+  --radius-xl: 14px;
+  --radius-xl-plus: 16px;
+  --radius-2xl: 20px;
+
+  --text-display-sm: 36px;
+  --text-display-sm--line-height: 44px;
+  --text-display-sm--font-weight: 600;
+  --text-display-sm--letter-spacing: -0.04em;
+  --text-headline-lg: 32px;
+  --text-headline-lg--line-height: 40px;
+  --text-headline-lg--font-weight: 600;
+  --text-headline-lg--letter-spacing: -0.04em;
+  --text-headline-md: 28px;
+  --text-headline-md--line-height: 36px;
+  --text-headline-md--font-weight: 600;
+  --text-headline-md--letter-spacing: -0.04em;
+  --text-headline-sm: 24px;
+  --text-headline-sm--line-height: 32px;
+  --text-headline-sm--font-weight: 600;
+  --text-headline-sm--letter-spacing: -0.02em;
+  --text-title-lg: 22px;
+  --text-title-lg--line-height: 28px;
+  --text-title-lg--font-weight: 600;
+  --text-title-lg--letter-spacing: -0.02em;
+  --text-title-md: 16px;
+  --text-title-md--line-height: 24px;
+  --text-title-md--font-weight: 500;
+  --text-title-md--letter-spacing: 0.15px;
+  --text-title-sm: 14px;
+  --text-title-sm--line-height: 20px;
+  --text-title-sm--font-weight: 500;
+  --text-title-sm--letter-spacing: 0.1px;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--font-weight: 400;
+  --text-body-lg--letter-spacing: 0.5px;
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--font-weight: 400;
+  --text-body-md--letter-spacing: 0.25px;
+  --text-body-sm: 12px;
+  --text-body-sm--line-height: 16px;
+  --text-body-sm--font-weight: 400;
+  --text-body-sm--letter-spacing: 0.4px;
+  --text-label-lg: 14px;
+  --text-label-lg--line-height: 20px;
+  --text-label-lg--font-weight: 500;
+  --text-label-lg--letter-spacing: 0.1px;
+  --text-label-md: 12px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--font-weight: 500;
+  --text-label-md--letter-spacing: 0.5px;
+  --text-label-sm: 11px;
+  --text-label-sm--line-height: 16px;
+  --text-label-sm--font-weight: 500;
+  --text-label-sm--letter-spacing: 0.5px;
 }
 
 @layer base {
   * {
-    border-color: var(--border);
+    border-color: var(--outline-variant);
   }
 
   html {
@@ -137,18 +224,34 @@
     --mw-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
     --mw-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
     --mw-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+    /* Výšku snackbaru sem zapisuje ToastProvider, FAB a obsah se mu vyhnou. */
+    --snackbar-h: 0px;
   }
 
   body {
-    background-color: var(--background);
-    color: var(--foreground);
+    background-color: var(--surface);
+    color: var(--on-surface);
     font-family: var(--font-sans);
-    font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     overscroll-behavior: none;
     /* Modrý záblesk pod prstem prozradí web na první dotek. */
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    /* Přepnutí motivu se přelije, neskočí. */
+    transition:
+      background-color var(--dur-effects) var(--effects),
+      color var(--dur-effects) var(--effects);
+  }
+
+  input,
+  textarea {
+    caret-color: var(--primary);
+  }
+
+  /* Označený text je „vybraný“, takže zvýrazňovač, ne zelená. */
+  ::selection {
+    background: var(--highlight);
+    color: var(--on-highlight);
   }
 
   /* Text se v appce neoznačuje - kromě míst, kde ho uživatel chce zkopírovat. */
@@ -179,12 +282,12 @@
   }
 
   /*
-   * Místo pod obsahem, aby ho nepřekrylo plovoucí tlačítko. Počítá se z jeho
-   * výšky i z bezpečné zóny gest - na telefonu s gesty je pruh o dost vyšší,
-   * takže pevné číslo poslední řádek uřízne.
+   * Místo pod obsahem, aby ho nepřekryl FAB ani snackbar. Počítá se i se
+   * zónou gest - na telefonu s gesty je pruh o dost vyšší, takže pevné číslo
+   * poslední řádek uřízne.
    */
   .mw-pad-nav {
-    padding-bottom: calc(6rem + var(--mw-safe-bottom));
+    padding-bottom: calc(96px + var(--snackbar-h, 0px) + var(--mw-safe-bottom));
   }
 
   /*
@@ -193,12 +296,23 @@
    */
   @media (pointer: coarse) {
     button[class*="size-7"],
-    button[class*="size-9"] {
+    button[class*="size-8"],
+    button[class*="size-9"],
+    button[class*="size-10"],
+    button[class*="h-8"],
+    button[class*="h-9"],
+    button[class*="h-10"] {
       position: relative;
     }
 
+    /* Širší tlačítka (čipy, textová) si roztáhnou jen výšku - šířku mají. */
     button[class*="size-7"]::after,
-    button[class*="size-9"]::after {
+    button[class*="size-8"]::after,
+    button[class*="size-9"]::after,
+    button[class*="size-10"]::after,
+    button[class*="h-8"]::after,
+    button[class*="h-9"]::after,
+    button[class*="h-10"]::after {
       content: "";
       position: absolute;
       top: 50%;
@@ -209,71 +323,560 @@
     }
   }
 
+  /* Fokus z klávesnice musí být vidět na papíře i na zelené. */
   :focus-visible {
-    outline: 2px solid var(--ring);
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
 }
 
 @layer components {
   /*
-   * Barva poznámky. Kreslí se jako proužek u levé hrany karty, ne jako
-   * pozadí: obarvená plocha pod textem sráží kontrast a v tmavém režimu
-   * z půlky barev nezbyde nic čitelného.
-   *
-   * Odstíny sedí na `--note-tint`, kterou si karta i detail berou samy.
+   * Barva poznámky. Karta i detail si berou pozadí z `--note-bg`, akcent
+   * (citace, odrážky) z `--note-accent`. Text zůstává `--on-surface`,
+   * takže kontrast drží v obou motivech.
    */
+  [data-tone] {
+    --note-on: var(--on-surface);
+  }
+
+  [data-tone="none"] {
+    --note-bg: var(--surface-low);
+    --note-accent: var(--outline);
+  }
+
+  /* Barva je jen nádech na černé (mpL nezná jiné odstíny než jantar) - poznávací znak, ne výplň. */
   [data-tone="amber"] {
-    --note-tint: oklch(0.72 0.16 62);
+    --note-bg: #1f1609;
+    --note-accent: #f5a33a;
   }
 
   [data-tone="green"] {
-    --note-tint: oklch(0.66 0.19 145);
+    --note-bg: #0c1a10;
+    --note-accent: #6fcf8a;
   }
 
   [data-tone="blue"] {
-    --note-tint: oklch(0.62 0.17 250);
+    --note-bg: #0c1421;
+    --note-accent: #7fb2f0;
   }
 
   [data-tone="rose"] {
-    --note-tint: oklch(0.65 0.2 12);
+    --note-bg: #1f0e12;
+    --note-accent: #f08a99;
   }
 
   [data-tone="violet"] {
-    --note-tint: oklch(0.62 0.2 300);
+    --note-bg: #161021;
+    --note-accent: #b39cf0;
   }
 
-  /* V tmavém režimu se odstíny zesvětlují, jinak na kartě zmizí. */
-  .dark [data-tone="amber"] {
-    --note-tint: oklch(0.78 0.15 68);
+  [data-tone="sand"] {
+    --note-bg: #1a150c;
+    --note-accent: #d9b36c;
   }
 
-  .dark [data-tone="green"] {
-    --note-tint: oklch(0.82 0.2 145);
+  .note-surface {
+    background: var(--note-bg, var(--surface-low));
+    color: var(--on-surface);
   }
 
-  .dark [data-tone="blue"] {
-    --note-tint: oklch(0.75 0.15 250);
+
+  /* Horní lišta je bez stínu, po odjetí obsahu jen ztmavne o tón. */
+  .bar-scrolled {
+    background-color: rgb(0 0 0 / 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.1);
   }
 
-  .dark [data-tone="rose"] {
-    --note-tint: oklch(0.76 0.17 12);
+  /* Přes proměnné Tailwindu, jinak by váhu přebila utilita `text-headline-*`. */
+  .emph {
+    --tw-font-weight: 650;
+    --tw-tracking: -0.5px;
+    font-weight: 650;
+    letter-spacing: -0.5px;
   }
 
-  .dark [data-tone="violet"] {
-    --note-tint: oklch(0.76 0.16 300);
+  /* Tělo poznámky. Čte se jako papír, ne jako formulář. */
+  .prose-note {
+    font-size: 17px;
+    line-height: 1.6;
+    max-width: 68ch;
+    overflow-wrap: anywhere;
   }
 
-  /* Proužek u hrany karty. Bez barvy se schová úplně. */
-  .note-stripe::before {
+  .prose-note.serif {
+    font-family: var(--font-serif);
+  }
+
+  .prose-note p {
+    margin: 0;
+  }
+
+  .prose-note p + p {
+    margin-top: 0.75em;
+  }
+
+  .sticky-header {
+    position: sticky;
+    /* Výšku lišty nad sebou zná jen stránka, výchozí je řádek TopBaru. */
+    top: var(--sticky-top, calc(var(--mw-safe-top) + 64px));
+    z-index: 10;
+    background-color: var(--surface);
+    color: var(--on-surface-variant);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .edge-protect {
+    position: relative;
+  }
+
+  .edge-protect::before {
     content: "";
     position: absolute;
+    inset: 0 0 auto;
+    height: 24px;
+    background: linear-gradient(var(--surface), transparent);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* ---- Hledání: značka jako tah zvýrazňovačem zleva doprava ---- */
+
+  @keyframes hl-wipe {
+    to {
+      background-size: 100% 100%;
+    }
+  }
+
+  mark.hl {
+    background: linear-gradient(var(--highlight), var(--highlight)) no-repeat 0 0 / 0% 100%;
+    color: var(--on-highlight);
+    border-radius: 4px 2px 5px 3px;
+    padding: 0 2px;
+    animation: hl-wipe 220ms var(--effects) forwards;
+  }
+
+  /* ---- Markdown v režimu čtení ---- */
+
+  .md-h1 {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 650;
+  }
+
+  .md-h2 {
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 600;
+  }
+
+  .md-h3 {
+    font-size: 17px;
+    line-height: 24px;
+    font-weight: 600;
+    color: var(--on-surface-variant);
+  }
+
+  .md-quote {
+    border-left: 3px solid var(--note-accent, var(--outline));
+    padding-left: 12px;
+    color: var(--on-surface-variant);
+  }
+
+  .md-hr {
+    border: 0;
+    border-top: 1px solid var(--outline-variant);
+    margin: 16px 0;
+  }
+
+  .md-code {
+    background: var(--surface-highest);
+    border-radius: 4px;
+    padding: 0 0.25em;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  .md-link {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .md-tag {
+    background: var(--highlight);
+    color: var(--on-highlight);
+    border-radius: 6px;
+    padding: 0 4px;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+
+  /* Visící odsazení: zalomený řádek odrážky začíná pod textem, ne pod tečkou. */
+  .md-li {
+    --md-level: 1;
+    position: relative;
+    padding-left: calc(1.25em * var(--md-level));
+  }
+
+  .md-li::before {
+    content: "•";
+    position: absolute;
+    left: calc(1.25em * (var(--md-level) - 1));
+    width: 1.25em;
+    text-align: center;
+    color: var(--note-accent, var(--outline));
+  }
+
+  /* Číslovaný řádek si číslo kreslí sám, tečka by překážela. */
+  .md-li[data-n]::before {
+    content: attr(data-n) ".";
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-task {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+
+  .md-task-done {
+    text-decoration: line-through;
+    opacity: 0.55;
+    transition: opacity var(--dur-effects) var(--effects);
+  }
+
+  .md-check {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    margin-top: calc((1.6em - 22px) / 2);
+    /* Tlumená šedá, ne rámečková: na černé by políčko jinak zmizelo. */
+    border: 2px solid var(--on-surface-variant);
+    border-radius: 6px;
+    color: var(--on-primary);
+    transition:
+      background-color var(--dur-effects) var(--effects),
+      border-color var(--dur-effects) var(--effects),
+      transform var(--dur-spring-fast) var(--spring-fast);
+  }
+
+  .md-check:active {
+    transform: scale(0.88);
+  }
+
+  .md-check[aria-checked="true"] {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .md-check > svg {
+    width: 16px;
+    height: 16px;
+    stroke-width: 3;
+  }
+
+  /* Zásah na 44 px, i když políčko měří 22. */
+  .md-check::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+
+  /* ---- Editor: průhledná textarea nad zrcadlem se zvýrazněním ---- */
+
+  .ed-stack {
+    display: grid;
+  }
+
+  .ed-stack > * {
+    grid-area: 1 / 1;
+    font: inherit;
+    letter-spacing: inherit;
+    line-height: 1.6;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    tab-size: 4;
+  }
+
+  .ed-input {
+    color: transparent;
+    background: transparent;
+    caret-color: var(--primary);
+    resize: none;
+    overflow: hidden;
+    outline: none;
+  }
+
+  .ed-input::selection {
+    background: color-mix(in oklab, var(--primary) 28%, transparent);
+    color: transparent;
+  }
+
+  .ed-mirror {
+    pointer-events: none;
+    color: var(--on-surface);
+  }
+
+  /* Jen barva a dekorace - šířka znaků se nesmí pohnout, jinak uteče kurzor. */
+  .ed-marker {
+    opacity: 0.4;
+  }
+
+  .ed-heading {
+    color: var(--primary);
+    -webkit-text-stroke: 0.35px currentColor;
+  }
+
+  .ed-bold {
+    -webkit-text-stroke: 0.35px currentColor;
+  }
+
+  .ed-italic {
+    color: var(--on-surface-variant);
+  }
+
+  .ed-done {
+    text-decoration: line-through;
+    opacity: 0.55;
+  }
+
+  .ed-tag {
+    background: var(--highlight);
+    border-radius: 4px;
+  }
+
+  .ed-link {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+
+  .ed-code {
+    background: var(--surface-highest);
+  }
+
+  .ed-quote {
+    color: var(--on-surface-variant);
+  }
+
+  /* ---- Dialogy: vstup přes @starting-style, odchod přes data-state ---- */
+
+  .dlg-scrim {
+    background: var(--scrim);
+    transition: opacity var(--dur-effects) var(--effects);
+  }
+
+  .dlg-scrim[data-state="closed"] {
+    opacity: 0;
+    transition: opacity 250ms var(--ease-emphasized-accel);
+  }
+
+  .dlg-panel {
+    --dlg-fade: 1;
+    transition:
+      transform var(--dur-spring-default) var(--spring-default),
+      opacity var(--dur-effects) var(--effects);
+  }
+
+  .dlg-panel[data-variant="sheet"] {
+    --dlg-from: translateY(100%);
+  }
+
+  .dlg-panel[data-variant="center"] {
+    --dlg-from: scale(0.86);
+    --dlg-fade: 0;
+    transition-duration: var(--dur-spring-fast), var(--dur-effects);
+    transition-timing-function: var(--spring-fast), var(--effects);
+  }
+
+  .dlg-panel[data-variant="fullscreen"] {
+    --dlg-from: translateY(48px);
+    --dlg-fade: 0;
+    transition-duration: var(--dur-spring-slow), var(--dur-effects);
+    transition-timing-function: var(--spring-slow), var(--effects);
+  }
+
+  /* Odchod trvá asi 60 % příchodu a zrychluje, nikdy nepruží. */
+  .dlg-panel[data-state="closed"] {
+    transform: var(--dlg-from);
+    opacity: var(--dlg-fade);
+    transition:
+      transform 250ms var(--ease-emphasized-accel),
+      opacity 250ms var(--ease-emphasized-accel);
+  }
+
+  /* ---- FAB: vyskočí, uhne snackbaru, sbalí popisek po pružině ---- */
+
+  .fab {
+    animation:
+      kf-move var(--dur-spring-fast) var(--spring-fast) backwards,
+      kf-fade var(--dur-effects) var(--effects) backwards;
+    --anim-from: scale(0.6);
+    transition:
+      transform var(--dur-spring-fast) var(--spring-fast),
+      border-radius var(--dur-spring-fast) var(--spring-fast),
+      bottom var(--dur-spring-default) var(--spring-default),
+      background-color var(--dur-effects) var(--effects);
+  }
+
+  .fab:active {
+    transform: scale(0.96);
+  }
+
+  .fab-icon {
+    display: grid;
+    transition: rotate var(--dur-spring-fast) var(--spring-fast);
+  }
+
+  .fab[aria-expanded="true"] .fab-icon {
+    rotate: 45deg;
+  }
+
+  .fab-label {
+    display: grid;
+    grid-template-columns: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-columns var(--dur-spring-default) var(--spring-default),
+      opacity var(--dur-effects) var(--effects);
+  }
+
+  .fab-label[data-shown] {
+    grid-template-columns: 1fr;
+    opacity: 1;
+  }
+
+  .fab-label > span {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    padding-left: 12px;
+    padding-right: 4px;
+  }
+
+  /* ---- Přepínač: palec roste po pružině (vypnutý 16, zapnutý 24, stisk 28) ---- */
+
+  .switch-thumb {
+    left: 6px;
+    width: 16px;
+    height: 16px;
+    translate: 0 -50%;
+    transition:
+      left var(--dur-spring-fast) var(--spring-fast),
+      width var(--dur-spring-fast) var(--spring-fast),
+      height var(--dur-spring-fast) var(--spring-fast),
+      background-color var(--dur-effects) var(--effects);
+  }
+
+  .switch-thumb[data-checked] {
+    left: 22px;
+    width: 24px;
+    height: 24px;
+  }
+
+  .group:active .switch-thumb {
     left: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    border-radius: var(--radius) 0 0 var(--radius);
-    background: var(--note-tint, transparent);
+    width: 28px;
+    height: 28px;
+  }
+
+  .group:active .switch-thumb[data-checked] {
+    left: 20px;
+  }
+
+  /* ---- Menu FABu: pilulky se vějířem zvednou nad tlačítko ---- */
+
+  .fab-menu-item {
+    --anim-from: translateY(16px) scale(0.8);
+    transition:
+      transform var(--dur-spring-fast) var(--spring-fast),
+      opacity var(--dur-effects) var(--effects);
+    transition-delay: calc(var(--i, 0) * 30ms);
+  }
+
+  .fab-menu-item[data-state="closed"] {
+    transform: var(--anim-from);
+    opacity: 0;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-emphasized-accel);
+    transition-delay: 0ms;
+  }
+
+  /* ---- Snackbar, prázdný stav, rotující nápověda hledání ---- */
+
+  @keyframes breathe {
+    50% {
+      transform: scale(1.03);
+    }
+  }
+
+  .breathe {
+    animation: breathe 4s ease-in-out infinite;
+    transform-origin: center;
+    transform-box: fill-box;
+  }
+
+  /* Jantarové „_“ bliká jako kurzor - stejně jako na slashunderscore. */
+  @keyframes caret-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  .caret-blink {
+    animation: caret-blink 1.05s steps(1) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .caret-blink {
+      animation: none;
+    }
+  }
+
+  @keyframes hint-in {
+    from {
+      opacity: 0;
+      transform: translateY(60%);
+    }
+  }
+
+  .hint-in {
+    animation: hint-in var(--dur-spring-default) var(--spring-default) both;
+  }
+}
+
+@starting-style {
+  .dlg-scrim {
+    opacity: 0;
+  }
+
+  .dlg-panel {
+    transform: var(--dlg-from);
+    opacity: var(--dlg-fade);
+  }
+
+  .fab-menu-item {
+    transform: var(--anim-from);
+    opacity: 0;
   }
 }
 
@@ -282,161 +885,160 @@
     font-variant-numeric: tabular-nums;
   }
 
-  @keyframes mw-in {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
+  .fade-mask-b {
+    mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
   }
 
-  .animate-in-up {
-    animation: mw-in 0.18s ease-out both;
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 
   /*
-   * Odezva na přírůstek. Pruh sám o sobě jen tiše povyroste, což se v běhu
-   * palce ztratí - proto přes něj přeběhne světlo, číslo lehce nadskočí
-   * a nad ním vyplave bublina s tím, o kolik se to hnulo.
+   * Vrstva stavu M3: přes prvek se položí jeho vlastní barva textu a podle
+   * stavu (najetí, fokus, stisk) zesílí. Funguje na každé barvě tlačítka.
    */
-  @keyframes mw-shine {
+  /* Přes :where, aby ho fixed nebo absolute z Tailwindu přebily. */
+  :where(.state-layer) {
+    position: relative;
+  }
+
+  .state-layer {
+    isolation: isolate;
+  }
+
+  .state-layer::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-effects) var(--effects);
+  }
+
+  @media (hover: hover) {
+    .state-layer:hover::before {
+      opacity: 0.08;
+    }
+  }
+
+  .state-layer:focus-visible::before,
+  .state-layer:active::before {
+    opacity: 0.1;
+  }
+
+  /* Stisk: roh se zakulatí na 12 px a prvek se lehce zmáčkne. */
+  .press-morph {
+    transition:
+      transform var(--dur-spring-fast) var(--spring-fast),
+      border-radius var(--dur-spring-fast) var(--spring-fast),
+      background-color var(--dur-effects) var(--effects),
+      color var(--dur-effects) var(--effects),
+      opacity var(--dur-effects) var(--effects);
+  }
+
+  .press-morph:active:not(:disabled) {
+    transform: scale(0.96);
+    border-radius: 12px;
+  }
+
+  /* ---- Pohyb: posun po pružině, průhlednost po efektové křivce ---- */
+
+  @keyframes kf-move {
     from {
-      transform: translateX(-100%);
-      opacity: 0;
+      transform: var(--anim-from);
     }
-    35% {
-      opacity: 1;
-    }
-    to {
-      transform: translateX(100%);
+  }
+
+  @keyframes kf-fade {
+    from {
       opacity: 0;
     }
   }
 
-  .mw-shine {
-    animation: mw-shine 0.75s ease-out both;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      color-mix(in oklab, white 65%, transparent) 50%,
-      transparent 100%
-    );
+  .anim-enter,
+  .animate-in-up,
+  .stagger > * {
+    --anim-from: translateY(16px);
+    animation:
+      kf-move var(--dur-spring-default) var(--spring-default) backwards,
+      kf-fade var(--dur-effects) var(--effects) backwards;
   }
 
+  .stagger > * {
+    animation-delay: calc(var(--i, 0) * 30ms);
+  }
+
+  .anim-page {
+    --anim-from: translateY(24px) scale(0.98);
+    animation:
+      kf-move var(--dur-spring-slow) var(--spring-slow) backwards,
+      kf-fade var(--dur-effects) var(--effects) backwards;
+  }
+
+  .anim-pop {
+    --anim-from: scale(0.6);
+    animation:
+      kf-move var(--dur-spring-fast) var(--spring-fast) backwards,
+      kf-fade var(--dur-effects) var(--effects) backwards;
+  }
+
+  .anim-fade {
+    animation: kf-fade var(--dur-effects) var(--effects) backwards;
+  }
+
+  /* Poskočení počítadla koše a archivu. */
   @keyframes mw-pop {
-    0% {
-      transform: scale(1);
-    }
-    40% {
-      transform: scale(1.09);
-    }
-    to {
-      transform: scale(1);
+    from {
+      transform: scale(1.14);
     }
   }
 
   .mw-pop {
-    animation: mw-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    animation: mw-pop var(--dur-spring-fast) var(--spring-fast);
   }
 
-  @keyframes mw-rise {
-    0% {
-      opacity: 0;
-      transform: translate(-50%, 4px) scale(0.85);
+  /* Méně pohybu: příchody jen prolnou, nic nedýchá ani nepoposkočí. */
+  @media (prefers-reduced-motion: reduce) {
+    .anim-enter,
+    .animate-in-up,
+    .stagger > *,
+    .anim-page,
+    .anim-pop,
+    .fab,
+    .fab-menu-item,
+    .dlg-panel {
+      --anim-from: none;
+      --dlg-from: none;
+      --dlg-fade: 0;
     }
-    22% {
-      opacity: 1;
-      transform: translate(-50%, -6px) scale(1);
-    }
-    70% {
-      opacity: 1;
-      transform: translate(-50%, -12px) scale(1);
-    }
-    to {
-      opacity: 0;
-      transform: translate(-50%, -24px) scale(0.95);
-    }
-  }
 
-  .mw-rise {
-    animation: mw-rise 1.15s ease-out both;
-  }
-
-  /* Doražení do stovky. Jednou zazáří celý pruh a je hotovo. */
-  @keyframes mw-flash {
-    0% {
-      box-shadow: 0 0 0 0 color-mix(in oklab, var(--progress) 70%, transparent);
+    .hint-in {
+      animation-name: kf-fade;
     }
-    to {
-      box-shadow: 0 0 0 10px color-mix(in oklab, var(--progress) 0%, transparent);
-    }
-  }
 
-  .mw-flash {
-    animation: mw-flash 0.9s ease-out both;
-  }
-
-  /*
-   * Losování PushWinu. Pás výzev projede kolem značky a dojede - zpomalení
-   * na konci dělá celé napětí, proto křivka s dlouhým doběhem.
-   */
-  @keyframes mw-reel {
-    from {
-      transform: translateX(0);
+    .breathe,
+    .mw-pop {
+      animation: none;
     }
-    to {
-      transform: translateX(-72%);
-    }
-  }
 
-  .mw-reel {
-    animation: mw-reel 2.6s cubic-bezier(0.12, 0.7, 0.1, 1) both;
-  }
-
-  /* Plovoucí tlačítko nepřilétá odnikud, jen se zvedne zpod svého místa. */
-  @keyframes mw-fab-in {
-    from {
-      opacity: 0;
-      transform: translateY(10px) scale(0.92);
-    }
-    to {
-      opacity: 1;
+    .fab:active,
+    .press-morph:active:not(:disabled) {
       transform: none;
     }
   }
 
-  .mw-fab-in {
-    animation: mw-fab-in 0.22s ease-out both;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .animate-in-up,
-    .mw-shine,
-    .mw-pop,
-    .mw-rise,
-    .mw-flash,
-    .mw-fab-in,
-    .mw-reel {
-      animation: none;
-    }
-
-    /* Bublina i lesk jsou čistě ozdobné - bez pohybu nemají co dělat na obraze. */
-    .mw-shine,
-    .mw-rise {
-      display: none;
-    }
-  }
-}
-
-@layer utilities {
-  /* Tenký, tichý scrollbar - kalendář na úzkém okně přeteče a hrubý systémový
-     pruh pod ním kalendář opticky rozbíjí. */
+  /* Tenký, tichý scrollbar tam, kde nějaký být musí. */
   .scroll-quiet {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--foreground) 18%, transparent) transparent;
+    scrollbar-color: color-mix(in oklab, var(--on-surface) 18%, transparent) transparent;
   }
 
   .scroll-quiet::-webkit-scrollbar {
@@ -450,10 +1052,6 @@
 
   .scroll-quiet::-webkit-scrollbar-thumb {
     border-radius: 999px;
-    background: color-mix(in oklab, var(--foreground) 18%, transparent);
-  }
-
-  .scroll-quiet:hover::-webkit-scrollbar-thumb {
-    background: color-mix(in oklab, var(--foreground) 32%, transparent);
+    background: color-mix(in oklab, var(--on-surface) 18%, transparent);
   }
 }

@@ -14,6 +14,7 @@ import { App } from "@capacitor/app";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
+import { getPrefs } from "./prefs";
 
 type CapacitorGlobal = {
   isNativePlatform?: () => boolean;
@@ -29,24 +30,40 @@ export function isNative(): boolean {
   return capacitor()?.isNativePlatform?.() === true;
 }
 
-/** Krátké cvaknutí při zaškrtnutí winu - na mobilu, jinak nic. */
-export async function tapFeedback(): Promise<void> {
-  if (!isNative()) return;
-  try {
-    await Haptics.impact({ style: ImpactStyle.Light });
-  } catch {
+export type HapticKind = "tick" | "select" | "press" | "success" | "error";
+
+/**
+ * Hmatová odezva. Vystřelí a zapomene - na vibraci se nikdy nečeká a její
+ * selhání (zařízení bez motorku) nemá co rozbít. Vypíná se v Nastavení.
+ */
+export function haptic(kind: HapticKind): void {
+  if (!isNative() || !getPrefs().haptics) return;
+  const run = async () => {
+    if (kind === "tick") return Haptics.impact({ style: ImpactStyle.Light });
+    if (kind === "press") return Haptics.impact({ style: ImpactStyle.Medium });
+    if (kind === "select") {
+      // Android selectionChanged bez selectionStart tiše nic neudělá.
+      await Haptics.selectionStart();
+      await Haptics.selectionChanged();
+      return Haptics.selectionEnd();
+    }
+    return Haptics.notification({
+      type: kind === "success" ? NotificationType.Success : NotificationType.Error,
+    });
+  };
+  run().catch(() => {
     // zařízení bez vibrace - není co řešit
-  }
+  });
 }
 
-/** Delší cvaknutí, když padne microwin. */
+/** Starší jméno pro `haptic("tick")`. */
+export async function tapFeedback(): Promise<void> {
+  haptic("tick");
+}
+
+/** Starší jméno pro `haptic("success")`. */
 export async function winFeedback(): Promise<void> {
-  if (!isNative()) return;
-  try {
-    await Haptics.notification({ type: NotificationType.Success });
-  } catch {
-    // zařízení bez vibrace
-  }
+  haptic("success");
 }
 
 /** Stavová lišta v barvě appky, ikony podle světlosti tématu. */
@@ -54,7 +71,7 @@ export async function syncStatusBar(dark: boolean): Promise<void> {
   if (!isNative()) return;
   try {
     await StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light });
-    await StatusBar.setBackgroundColor({ color: dark ? "#09090B" : "#FDFDFD" });
+    await StatusBar.setBackgroundColor({ color: dark ? "#000000" : "#FFFFFF" });
   } catch {
     // starší Android bez podpory barvy lišty
   }

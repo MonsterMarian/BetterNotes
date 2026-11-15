@@ -65,6 +65,17 @@ export function useBackLayer(open: boolean, close: () => void): void {
   }, [open]);
 }
 
+/**
+ * `false` = `router.back()` nemá kam jít (appka naběhla rovnou na podstránce).
+ * Navigation API (Chromium WebView 102+) zná skutečnou hloubku historie;
+ * počítadlo přechodů je jen záloha - po studeném startu na /trash a cestě
+ * do poznámky a zpět by tvrdilo, že historie je.
+ */
+export function hasInAppHistory(): boolean {
+  const nav = (window as Window & { navigation?: { canGoBack?: boolean } }).navigation;
+  return typeof nav?.canGoBack === "boolean" ? nav.canGoBack : inAppNavigations > 0;
+}
+
 /** Vrátí funkci „jdi na tuhle nadřazenou obrazovku". */
 export function useGoUp(): (href: string) => void {
   const router = useRouter();

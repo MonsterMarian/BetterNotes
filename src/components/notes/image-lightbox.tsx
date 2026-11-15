@@ -4,8 +4,8 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useBackLayer } from "@/components/providers/use-app-back";
-import { readImage } from "@/lib/images";
 import { cn } from "@/lib/utils";
+import { useImageSrc } from "./note-thumb";
 
 /**
  * Fotka přes celou obrazovku.
@@ -79,15 +79,16 @@ export function ImageLightbox({
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex flex-col bg-black/95" role="dialog" aria-modal="true">
-      <div className="flex items-center gap-2 p-3 text-white">
-        <span className="tabular text-sm opacity-70">
+      {/* viewportFit=cover: bez safe-area by křížek ležel pod stavovou lištou nebo výřezem. */}
+      <div className="flex items-center gap-2 pb-3 pl-[calc(12px+var(--mw-safe-left))] pr-[calc(12px+var(--mw-safe-right))] pt-[calc(12px+var(--mw-safe-top))] text-white">
+        <span className="tabular text-label-lg opacity-70">
           {count > 1 ? `${index + 1} / ${count}` : ""}
         </span>
         <button
           type="button"
           onClick={onClose}
           aria-label="Zavřít fotku"
-          className="ml-auto rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20"
+          className="ml-auto grid size-12 place-items-center rounded-full bg-white/10 transition-colors hover:bg-white/20"
         >
           <X className="size-5" />
         </button>
@@ -111,18 +112,24 @@ export function ImageLightbox({
       </div>
 
       {count > 1 ? (
-        <div className="flex justify-center gap-1.5 pb-[calc(1rem+var(--mw-safe-bottom))] pt-2">
+        <div className="flex justify-center gap-0 pb-[calc(1rem+var(--mw-safe-bottom))] pt-2">
+          {/* Tečka je malá, zásah ne: size-8 si na dotyku roztáhne 44px hack v globals.css. */}
           {names.map((n, i) => (
             <button
               key={n}
               type="button"
               aria-label={`Fotka ${i + 1}`}
+              aria-current={i === index || undefined}
               onClick={() => onIndexChange(i)}
-              className={cn(
-                "size-1.5 rounded-full transition-colors",
-                i === index ? "bg-white" : "bg-white/35",
-              )}
-            />
+              className="grid size-8 place-items-center"
+            >
+              <span
+                className={cn(
+                  "size-1.5 rounded-full transition-colors",
+                  i === index ? "bg-white" : "bg-white/35",
+                )}
+              />
+            </button>
           ))}
         </div>
       ) : null}
@@ -151,27 +158,12 @@ function Arrow({ side, onClick }: { side: "left" | "right"; onClick: () => void 
   );
 }
 
-/** Fotka v plné velikosti - bajty se čtou z úložiště stejně jako u náhledu. */
+/** Fotka v plné velikosti - adresa se bere stejně jako u náhledu. */
 function FullImage({ name }: { name: string }) {
-  const [src, setSrc] = React.useState<string | null>(null);
-  const [missing, setMissing] = React.useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setSrc(null);
-    setMissing(false);
-    void readImage(name).then((data) => {
-      if (cancelled) return;
-      if (data) setSrc(data);
-      else setMissing(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [name]);
+  const { src, missing, onError } = useImageSrc(name);
 
   if (missing) {
-    return <p className="text-sm text-white/70">Tahle fotka už v telefonu není.</p>;
+    return <p className="text-body-md text-white/70">Tahle fotka už v telefonu není.</p>;
   }
   if (!src) {
     return <div className="size-16 animate-pulse rounded-lg bg-white/10" />;
@@ -182,8 +174,9 @@ function FullImage({ name }: { name: string }) {
     <img
       src={src}
       alt="Fotka v poznámce"
+      onError={onError}
       onClick={(e) => e.stopPropagation()}
-      className="max-h-full max-w-full object-contain"
+      className="anim-fade max-h-full max-w-full object-contain"
     />
   );
 }

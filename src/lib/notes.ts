@@ -5,11 +5,15 @@
  * Každá změna vrací nový stav. Poznámky se nikdy nemění na místě, jinak by
  * React neviděl, že se něco stalo.
  */
+import { taskStats } from "./checklist";
+import { dayTitle } from "./date";
 import { stripImageMarkers } from "./inline-images";
+import { parseQuery, rankNotes } from "./search";
 import { createId } from "./utils";
 import {
   EMPTY_STATE,
   type BetterNotesState,
+  type ISODate,
   type ISOStamp,
   type Note,
   type NoteTone,
@@ -34,6 +38,30 @@ export function trashedNotes(state: BetterNotesState): Note[] {
   return state.notes.filter((n) => n.deletedAt);
 }
 
+/** Hlavní obrazovka: mimo koš a mimo archiv. */
+export function activeNotes(state: BetterNotesState): Note[] {
+  return state.notes.filter((n) => !n.deletedAt && !n.archivedAt);
+}
+
+export function archivedNotes(state: BetterNotesState): Note[] {
+  return state.notes.filter((n) => !n.deletedAt && n.archivedAt);
+}
+
+/** Denní poznámka pro daný den - jedna na den, i když leží v archivu. */
+export function findDailyNote(state: BetterNotesState, day: ISODate): Note | undefined {
+  return liveNotes(state).find((n) => n.day === day);
+}
+
+/** Značka seznamu nebo nadpisu na začátku řádku - do titulku nepatří. */
+const LINE_MARKUP = /^\s*(?:[-*] \[[ xX]\]|[-*]|\d+\.|>|#{1,3})(?:\s+|$)/;
+
+/** "**tučně** a _kurzíva_" -> "tučně a kurzíva": titulek karty se kreslí jako prostý text. */
+function stripInlineMarkup(line: string): string {
+  return line
+    .replace(/\*\*|__|~~|`/g, "")
+    .replace(/(^|[^\p{L}\p{N}])[*_](?=\S)(.+?)(?<=\S)[*_](?![\p{L}\p{N}])/gu, "$1$2");
+}
+
 /**
  * Jméno poznámky do seznamu. Prázdný titulek nahradí první neprázdný řádek
  * textu - poznámku psanou ve spěchu tak jde v seznamu poznat.
@@ -41,10 +69,12 @@ export function trashedNotes(state: BetterNotesState): Note[] {
 export function noteTitle(note: Note): string {
   const title = note.title.trim();
   if (title) return title;
+  if (note.day) return dayTitle(note.day);
   // Značka fotky není text poznámky - jako název by z ní bylo "![](img_3.jpg)".
+  // Stejně tak "- [ ]" před první položkou nákupu.
   const firstLine = stripImageMarkers(note.text)
     .split("\n")
-    .map((l) => l.trim())
+    .map((l) => stripInlineMarkup(l.replace(LINE_MARKUP, "")).trim())
     .find((l) => l.length > 0);
   if (firstLine) return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
   return note.images.length > 0 ? "Fotka" : "Bez názvu";
@@ -57,16 +87,23 @@ export function noteTitle(note: Note): string {
 export function noteExcerpt(note: Note, limit = 140): string {
   const lines = stripImageMarkers(note.text)
     .split("\n")
-    .map((l) => l.trim());
-  const skipFirst = !note.title.trim();
+    .map((l) => stripInlineMarkup(l.replace(LINE_MARKUP, "")).trim());
+  const skipFirst = !note.title.trim() && !note.day;
   const body = (skipFirst ? lines.slice(lines.findIndex((l) => l.length > 0) + 1) : lines)
     .filter((l) => l.length > 0)
     .join(" ");
   return body.length > limit ? `${body.slice(0, limit)}…` : body;
 }
 
+/**
+ * Prázdná = nic napsaného. Osamělá značka seznamu ("- [ ] " z rychlého
+ * založení seznamu) se za obsah nepočítá - opuštěný seznam se zahodí.
+ */
 export function isEmptyNote(note: Note): boolean {
-  return !note.title.trim() && !note.text.trim() && note.images.length === 0;
+  const blank = note.text
+    .split("\n")
+    .every((l) => /^\s*(?:[-*](?: \[[ xX]\])?|\d+\.|>|#{1,3})?\s*$/.test(l));
+  return !note.title.trim() && blank && note.images.length === 0;
 }
 
 // --- štítky -----------------------------------------------------------------
@@ -81,11 +118,34 @@ export function normalizeTag(raw: string): string {
     .slice(0, 24);
 }
 
+/**
+ * `#štítky` napsané přímo v textu. Nadpis "# Nadpis" (mezera za mřížkou)
+ * ani kotva v odkazu (`/#sekce`, bez mezery před mřížkou) štítek nejsou.
+ */
+export function extractHashtags(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/(^|[\s(])#(\p{L}[\p{L}\p{N}_\/-]*)/gu)) {
+    const tag = normalizeTag(m[2]);
+    if (tag && !out.includes(tag)) out.push(tag);
+  }
+  return out;
+}
+
+/** Štítky poznámky: přidané ručně a pak ty z textu, bez opakování. */
+export function noteTags(note: Note): string[] {
+  return [...new Set([...note.tags, ...extractHashtags(note.text)])];
+}
+
+/** Filtr "prace" sedí i na vnořený "prace/projekt". */
+export function tagMatches(noteTag: string, filter: string): boolean {
+  return noteTag === filter || noteTag.startsWith(`${filter}/`);
+}
+
 /** Všechny štítky v appce s počtem použití, od nejčastějšího. */
 export function tagCounts(state: BetterNotesState): { tag: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const note of liveNotes(state)) {
-    for (const tag of note.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    for (const tag of noteTags(note)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
   }
   return [...counts.entries()]
     .map(([tag, count]) => ({ tag, count }))
@@ -105,15 +165,16 @@ export function fold(value: string): string {
 /**
  * Dotaz se rozpadne na slova a poznámka musí sedět na všechna. Hledá se
  * v titulku, textu i štítcích, takže "nakup mleko" najde poznámku se
- * štítkem `nakup` a slovem "mléko" v textu.
+ * štítkem `nakup` a slovem "mléko" v textu. Slovo s mřížkou (`#prace`)
+ * hledá jen mezi štítky.
  */
 export function matchesQuery(note: Note, query: string): boolean {
-  const words = fold(query).split(/\s+/).filter(Boolean);
-  if (words.length === 0) return true;
+  const { words, tags } = parseQuery(query);
+  if (words.length === 0 && tags.length === 0) return true;
+  const own = noteTags(note).map(fold);
+  if (!tags.every((t) => own.some((o) => tagMatches(o, t)))) return false;
   // Jména souborů se nehledají - "img" by jinak našlo každou poznámku s fotkou.
-  const haystack = fold(
-    `${note.title} ${stripImageMarkers(note.text)} ${note.tags.join(" ")}`,
-  );
+  const haystack = fold(`${noteTitle(note)} ${stripImageMarkers(note.text)}`) + ` ${own.join(" ")}`;
   return words.every((w) => haystack.includes(w));
 }
 
@@ -139,19 +200,54 @@ export function sortNotes(notes: Note[], order: SortOrder): Note[] {
   return [...notes].sort(by);
 }
 
+export type QuickFilter = "all" | "pinned" | "todo" | "photos" | "untagged";
+
+export const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
+  { id: "all", label: "Vše" },
+  { id: "pinned", label: "Připnuté" },
+  { id: "todo", label: "Úkoly" },
+  { id: "photos", label: "S fotkou" },
+  { id: "untagged", label: "Bez štítku" },
+];
+
+const QUICK: Record<QuickFilter, (n: Note) => boolean> = {
+  all: () => true,
+  pinned: (n) => n.pinned,
+  todo: (n) => {
+    const { done, total } = taskStats(n.text);
+    return done < total;
+  },
+  photos: (n) => n.images.length > 0,
+  untagged: (n) => noteTags(n).length === 0,
+};
+
 export interface NoteFilter {
   query?: string;
   tag?: string | null;
   order?: SortOrder;
+  quick?: QuickFilter;
+  tone?: NoteTone | null;
+  scope?: "active" | "archive";
 }
 
-/** Seznam poznámek pro hlavní obrazovku: filtr, štítek a řazení naráz. */
+/**
+ * Seznam poznámek pro obrazovku: rozsah, filtry a řazení naráz. Hledání na
+ * hlavní obrazovce prohledá i archiv - archivovat nemá znamenat ztratit.
+ * S dotazem se řadí podle shody, jinak podle zvoleného řazení.
+ */
 export function visibleNotes(state: BetterNotesState, filter: NoteFilter = {}): Note[] {
-  const { query = "", tag = null, order = "updated" } = filter;
-  const found = liveNotes(state).filter(
-    (n) => matchesQuery(n, query) && (!tag || n.tags.includes(tag)),
+  const { query = "", tag = null, order = "updated", quick = "all", tone = null, scope = "active" } = filter;
+  const hasWords = parseQuery(query).words.length > 0;
+  const pool =
+    scope === "archive" ? archivedNotes(state) : hasWords ? liveNotes(state) : activeNotes(state);
+  const found = pool.filter(
+    (n) =>
+      QUICK[quick](n) &&
+      (!tone || n.tone === tone) &&
+      (!tag || noteTags(n).some((t) => tagMatches(t, tag))) &&
+      matchesQuery(n, query),
   );
-  return sortNotes(found, order);
+  return hasWords ? rankNotes(found, query) : sortNotes(found, order);
 }
 
 // --- změny ------------------------------------------------------------------
@@ -185,7 +281,7 @@ export function addNote(
  * připnutí ani přesun do koše není úprava textu a nemá poznámku vystřelit
  * na začátek seznamu.
  */
-const CONTENT_KEYS = ["title", "text", "images", "tags", "tone"] as const;
+export const CONTENT_KEYS = ["title", "text", "images", "tags", "tone"] as const;
 
 export function updateNote(
   state: BetterNotesState,
@@ -223,24 +319,56 @@ export function removeTag(state: BetterNotesState, id: string, tag: string): Bet
   return updateNote(state, id, { tags: note.tags.filter((t) => t !== tag) });
 }
 
-/** Do koše, ne z disku - vrátit se dá do vysypání. */
+/** Poznámka bez daného metadata (archiv, koš). Klíč zmizí úplně, ne jako `undefined`. */
+function dropKey(state: BetterNotesState, id: string, key: "deletedAt" | "archivedAt"): BetterNotesState {
+  return {
+    ...state,
+    notes: state.notes.map((n) => {
+      if (n.id !== id || !(key in n)) return n;
+      const { [key]: _dropped, ...rest } = n;
+      return rest;
+    }),
+  };
+}
+
+/** Do koše, ne z disku - vrátit se dá do vysypání. Z archivu jde rovnou do koše. */
 export function trashNote(
   state: BetterNotesState,
   id: string,
   now: Date = new Date(),
 ): BetterNotesState {
-  return updateNote(state, id, { deletedAt: nowStamp(now), pinned: false });
+  return dropKey(updateNote(state, id, { deletedAt: nowStamp(now), pinned: false }), id, "archivedAt");
 }
 
 export function restoreNote(state: BetterNotesState, id: string): BetterNotesState {
-  return {
-    ...state,
-    notes: state.notes.map((n) => {
-      if (n.id !== id) return n;
-      const { deletedAt: _dropped, ...rest } = n;
-      return rest;
-    }),
-  };
+  return dropKey(state, id, "deletedAt");
+}
+
+/** Do archivu: z hlavní obrazovky pryč, hledání ji najde. Odepíná se jako koš. */
+export function archiveNote(
+  state: BetterNotesState,
+  id: string,
+  now: Date = new Date(),
+): BetterNotesState {
+  return updateNote(state, id, { archivedAt: nowStamp(now), pinned: false });
+}
+
+export function unarchiveNote(state: BetterNotesState, id: string): BetterNotesState {
+  return dropKey(state, id, "archivedAt");
+}
+
+/**
+ * Vrátí poznámky přesně v podobě ze snímku (Zpět po smazání, archivaci...).
+ * Celé objekty včetně razítek - vrácená poznámka nesmí vyskočit nahoru.
+ * Poznámka, která ve stavu už není, se vloží na začátek.
+ */
+export function putNotes(state: BetterNotesState, notes: Note[]): BetterNotesState {
+  if (notes.length === 0) return state;
+  const byId = new Map(notes.map((n) => [n.id, n]));
+  const kept = state.notes.map((n) => byId.get(n.id) ?? n);
+  const present = new Set(state.notes.map((n) => n.id));
+  const added = notes.filter((n) => !present.has(n.id));
+  return { ...state, notes: [...added, ...kept] };
 }
 
 /**

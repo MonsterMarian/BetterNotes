@@ -49,6 +49,8 @@ android {
         debug {
             // I debug build ať se podepíše v1 + v2, ne jen v2.
             signingConfig signingConfigs.debug
+            // Ladicí build se instaluje vedle ostrého, ať testování nesáhne na data.
+            applicationIdSuffix ".test"
         }
         release {
             minifyEnabled false

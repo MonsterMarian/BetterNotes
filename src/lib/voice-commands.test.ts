@@ -31,6 +31,8 @@ describe("transcribe", () => {
 
   it("hashtag se lepí na následující slovo", () => {
     expect(say("koupit hashtag nákup")).toBe("koupit #nákup");
+    // Rozpoznávač vrací "Nákup" s velkým, štítek v textu má být malým.
+    expect(say("koupit hashtag Nákup")).toBe("koupit #nákup");
   });
 
   it("závorky obalí text bez mezer uvnitř", () => {

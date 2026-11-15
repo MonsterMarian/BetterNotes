@@ -136,3 +136,43 @@ export function monthDays(iso: ISODate): ISODate[] {
   const last = new Date(year, month + 1, 0).getDate();
   return Array.from({ length: last }, (_, i) => toISODate(new Date(year, month, i + 1, 12)));
 }
+
+// --- poznámky ---------------------------------------------------------------
+
+/**
+ * Razítko do karty a patičky: dnešek jako čas, včerejšek slovem, starší
+ * datum. Rok jen když není letošní - "12. 11." je čitelnější než celé datum.
+ */
+export function formatStamp(iso: string, now: Date = new Date()): string {
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return "";
+  const d = new Date(time);
+  const day = toISODate(d);
+  const today = toISODate(now);
+  if (day === today) return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+  if (day === addDays(today, -1)) return "včera";
+  const date = `${d.getDate()}. ${d.getMonth() + 1}.`;
+  return d.getFullYear() === now.getFullYear() ? date : `${date} ${d.getFullYear()}`;
+}
+
+const MONTH_GENITIVE = [
+  "ledna",
+  "února",
+  "března",
+  "dubna",
+  "května",
+  "června",
+  "července",
+  "srpna",
+  "září",
+  "října",
+  "listopadu",
+  "prosince",
+];
+
+/** 2026-11-13 -> "Pátek 13. listopadu" - název denní poznámky. */
+export function dayTitle(day: ISODate): string {
+  const d = fromISODate(day);
+  const name = DAY_NAMES[d.getDay()];
+  return `${name[0].toUpperCase()}${name.slice(1)} ${d.getDate()}. ${MONTH_GENITIVE[d.getMonth()]}`;
+}

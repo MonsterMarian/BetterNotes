@@ -228,6 +228,12 @@ export function transcribe(spoken: string, options: VoiceOptions = {}): VoiceTex
     i += length;
 
     if (!command) {
+      // Slovo za „hashtag“ je štítek - ty jsou malými písmeny, rozpoznávač je ale rád zvětší.
+      if (stick && out.endsWith("#")) {
+        push(word.toLowerCase(), false);
+        capitalize = false;
+        continue;
+      }
       if (caps === "all") {
         push(word.toUpperCase(), false);
       } else if (caps === "word" || capitalize) {

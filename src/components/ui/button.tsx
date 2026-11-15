@@ -1,28 +1,38 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@/lib/utils";
+import { cn } from "./cn";
 
+/*
+ * Poloměr je polovina výšky, ne `rounded-full`: z 9999 px na 12 px by
+ * stisk (`.press-morph`) celou dobu vypadal kulatě a na konci cvakl.
+ */
 export const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+  "state-layer press-morph inline-flex select-none items-center justify-center gap-2 whitespace-nowrap text-label-lg disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-5 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        mark: "bg-mark text-mark-foreground hover:bg-mark/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        filled: "bg-primary text-on-primary",
+        tonal: "bg-primary-container text-on-primary-container",
+        outline: "border border-outline text-primary",
+        text: "text-primary",
+        ghost: "text-on-surface-variant",
+        destructive: "bg-error text-on-error",
+        highlight: "bg-highlight text-on-highlight",
+        // Staré názvy, ať nepřepsaná volání dál fungují.
+        default: "bg-primary text-on-primary",
+        secondary: "bg-primary-container text-on-primary-container",
+        mark: "bg-highlight text-on-highlight",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-6",
-        icon: "size-9",
-        "icon-sm": "size-7 rounded-md",
+        sm: "h-9 rounded-[18px] px-3",
+        default: "h-10 rounded-[20px] px-5",
+        lg: "h-12 rounded-[24px] px-6",
+        icon: "size-10 rounded-[20px]",
+        "icon-sm": "size-8 rounded-[16px] [&_svg]:size-4",
+        "icon-lg": "size-12 rounded-[24px] [&_svg]:size-6",
       },
     },
-    defaultVariants: { variant: "default", size: "default" },
+    defaultVariants: { variant: "filled", size: "default" },
   },
 );
 

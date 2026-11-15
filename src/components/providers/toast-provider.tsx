@@ -1,21 +1,28 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Info, AlertTriangle, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Snackbar } from "@/components/ui/snackbar";
+import { useKeyboardHeight } from "@/components/ui/floating-toolbar";
 
-/** `success` nese barvu appky (zelenou), ne jantar - ten tu nic neznamená. */
+/**
+ * Hlášky dole na obrazovce. Vždy jen jedna: nová nahradí starou - dvě
+ * snackbary nad sebou by zakryly polovinu seznamu a "Zpět" by nebylo jasné
+ * ke které akci patří.
+ */
 type ToastTone = "success" | "info" | "warn";
 
-interface Toast {
-  id: number;
-  tone: ToastTone;
+export interface ToastInput {
+  tone?: ToastTone;
   title: string;
   description?: string;
+  action?: { label: string; onClick: () => void };
+  /** ms; výchozí 6 s s akcí (je čas trefit "Zpět"), jinak 4 s. */
+  duration?: number;
 }
 
 interface ToastApi {
-  toast: (t: Omit<Toast, "id">) => void;
+  toast: (t: ToastInput) => number;
+  dismiss: (id: number) => void;
 }
 
 const ToastContext = React.createContext<ToastApi | null>(null);
@@ -26,66 +33,101 @@ export function useToast(): ToastApi {
   return ctx;
 }
 
-const TONE_ICON = { success: CheckCircle2, info: Info, warn: AlertTriangle } as const;
+/** Výška snackbary pro FAB a spodní odsazení seznamu, ať je nezakryje. */
+function setSnackbarHeight(px: number): void {
+  document.documentElement.style.setProperty("--snackbar-h", `${px}px`);
+}
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = React.useState<Toast[]>([]);
+  const [current, setCurrent] = React.useState<(ToastInput & { id: number }) | null>(null);
   const nextId = React.useRef(1);
+  const timer = React.useRef<{ handle?: number; endsAt: number; left: number }>({ endsAt: 0, left: 0 });
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  // Bez adjustResize by snackbar i jeho Zpět skončily pod klávesnicí.
+  const keyboard = useKeyboardHeight();
 
   const dismiss = React.useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setCurrent((t) => (t?.id === id ? null : t));
   }, []);
 
-  const toast = React.useCallback(
-    (t: Omit<Toast, "id">) => {
-      const id = nextId.current++;
-      setToasts((prev) => [...prev, { ...t, id }]);
-      window.setTimeout(() => dismiss(id), t.tone === "success" ? 6000 : 4000);
+  const startTimer = React.useCallback(
+    (id: number, ms: number) => {
+      window.clearTimeout(timer.current.handle);
+      timer.current = { handle: window.setTimeout(() => dismiss(id), ms), endsAt: Date.now() + ms, left: ms };
     },
     [dismiss],
   );
 
-  const api = React.useMemo(() => ({ toast }), [toast]);
+  const toast = React.useCallback(
+    (t: ToastInput) => {
+      const id = nextId.current++;
+      setCurrent({ ...t, id });
+      startTimer(id, t.duration ?? (t.action ? 6000 : 4000));
+      return id;
+    },
+    [startTimer],
+  );
+
+  // Držený prst čas zastaví - kdo čte, nemá o hlášku přijít.
+  const onPressChange = React.useCallback(
+    (pressed: boolean) => {
+      if (!current) return;
+      if (pressed) {
+        window.clearTimeout(timer.current.handle);
+        timer.current.left = Math.max(0, timer.current.endsAt - Date.now());
+      } else {
+        startTimer(current.id, Math.max(1500, timer.current.left));
+      }
+    },
+    [current, startTimer],
+  );
+
+  React.useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!current || !box) {
+      setSnackbarHeight(0);
+      return;
+    }
+    const measure = () => setSnackbarHeight(box.offsetHeight + 8);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [current]);
+
+  React.useEffect(() => () => window.clearTimeout(timer.current.handle), []);
+
+  const api = React.useMemo(() => ({ toast, dismiss }), [toast, dismiss]);
 
   return (
     <ToastContext.Provider value={api}>
       {children}
       <div
-        // Na mobilu nad spodní lištou, ne pod ní.
-        className="mw-safe-bottom pointer-events-none fixed inset-x-0 bottom-16 z-[60] flex flex-col items-center gap-2 p-4 sm:bottom-0 sm:items-end"
+        className="pointer-events-none fixed inset-x-0 z-[60] flex justify-center px-4"
+        style={{ bottom: `calc(16px + max(var(--mw-safe-bottom), ${keyboard}px))` }}
         role="status"
         aria-live="polite"
       >
-        {toasts.map((t) => {
-          const Icon = TONE_ICON[t.tone];
-          return (
-            <div
-              key={t.id}
-              className={cn(
-                "animate-in-up pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-lg border p-3 shadow-lg",
-                t.tone === "success"
-                  ? "border-progress/40 bg-progress-muted text-progress-muted-foreground"
-                  : "bg-card text-card-foreground",
-              )}
-            >
-              <Icon className="mt-0.5 size-4 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{t.title}</p>
-                {t.description ? (
-                  <p className="mt-0.5 text-xs opacity-80">{t.description}</p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                onClick={() => dismiss(t.id)}
-                aria-label="Zavřít"
-                className="opacity-60 transition-opacity hover:opacity-100"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-          );
-        })}
+        {current ? (
+          <div ref={boxRef} className="pointer-events-auto w-full max-w-md">
+            <Snackbar
+              key={current.id}
+              title={current.title}
+              description={current.description}
+              actionLabel={current.action?.label}
+              onAction={
+                current.action
+                  ? () => {
+                      current.action?.onClick();
+                      dismiss(current.id);
+                    }
+                  : undefined
+              }
+              onClose={() => dismiss(current.id)}
+              onPressChange={onPressChange}
+            />
+          </div>
+        ) : null}
       </div>
     </ToastContext.Provider>
   );

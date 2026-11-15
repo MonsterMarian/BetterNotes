@@ -34,6 +34,13 @@ const MAX_BROKEN = 4;
 
 /** Po takhle dlouhém tichu se mikrofon vypne sám - ať nejede naprázdno. */
 const QUIET_LIMIT_MS = 90_000;
+const QUIET_MESSAGE = "Po minutě a půl ticha se mikrofon vypnul.";
+
+/** Jak dlouho po konci řeči čekat na konečný přepis, než začne další úsek. */
+const FINAL_WAIT_MS = 1200;
+
+/** Jak často se ověřuje, že rozpoznávač opravdu poslouchá. */
+const WATCHDOG_MS = 1000;
 
 export type DictationFailure = "denied" | "unavailable" | "error";
 
@@ -101,7 +108,7 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
       return {
         ok: false,
         reason: "denied",
-        message: "Bez přístupu k mikrofonu diktovat nejde.",
+        message: "Povol ho v Nastavení telefonu → Aplikace → BetterNotes → Oprávnění → Mikrofon.",
       };
     }
 
@@ -110,6 +117,13 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
     let done = false;
     /** Uživatel stiskl Stop - další úsek už nezačne. */
     let closing = false;
+    /**
+     * Běží úsek? Konec úseku plugin hlásí až třemi cestami (`stopped`, chyba,
+     * nebo vůbec), počítá se jen první - jinak se rozjedou dva starty naráz.
+     */
+    let live = false;
+    /** Úsek skončil řečí a čeká se na konečný přepis, než začne další. */
+    let awaitingFinal = false;
     /** Hotové úseky a rozepsaný poslední. */
     let committed = "";
     let partial = "";
@@ -117,6 +131,7 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
     let segmentAt = Date.now();
     let heardAt = Date.now();
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let watchdog: ReturnType<typeof setInterval> | null = null;
 
     const emit = () => handlers.onTranscript(join(committed, partial));
 
@@ -124,17 +139,26 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
       if (done) return;
       done = true;
       if (timer) clearTimeout(timer);
+      if (watchdog) clearInterval(watchdog);
       void SpeechRecognition.removeAllListeners();
       handlers.onEnd(reason, message);
     };
 
+    const restart = (delay: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(listen, delay);
+    };
+
     const listen = () => {
+      timer = null;
       if (done || closing) return;
+      awaitingFinal = false;
       if (partial) {
         committed = join(committed, partial);
         partial = "";
       }
       segmentAt = Date.now();
+      live = true;
       void SpeechRecognition.start({
         language: LANGUAGE,
         partialResults: true,
@@ -146,8 +170,9 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
     };
 
     /** Konec úseku: rozhodnout, jestli se pokračuje. */
-    const segmentEnded = (message?: string) => {
-      if (done) return;
+    const segmentEnded = (message?: string, delay = RESTART_MS) => {
+      if (done || !live) return;
+      live = false;
       if (closing) {
         if (partial) {
           committed = join(committed, partial);
@@ -162,16 +187,16 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
       if (broken >= MAX_BROKEN) {
         return finish("error", message ?? "Rozpoznávač se pořád vypíná.");
       }
-      if (Date.now() - heardAt > QUIET_LIMIT_MS) return finish();
+      if (Date.now() - heardAt > QUIET_LIMIT_MS) return finish(undefined, QUIET_MESSAGE);
 
-      timer = setTimeout(listen, RESTART_MS);
+      restart(delay);
     };
 
     const failed = (e: unknown) => {
       const message = String(e).slice(0, 120);
       // Odepřený mikrofon nemá cenu zkoušet znovu; „neslyšel jsem" ano.
       if (/permission|denied/i.test(message)) {
-        return finish("denied", "Bez přístupu k mikrofonu diktovat nejde.");
+        return finish("denied", "Povol ho v Nastavení telefonu → Aplikace → BetterNotes → Oprávnění → Mikrofon.");
       }
       segmentEnded(message);
     };
@@ -182,10 +207,27 @@ async function startNative(handlers: DictationHandlers): Promise<DictationStart>
       partial = text;
       heardAt = Date.now();
       emit();
+      // Konečný přepis dorazil - další úsek může začít hned.
+      if (awaitingFinal) restart(RESTART_MS);
     });
     await SpeechRecognition.addListener("listeningState", (data) => {
-      if (data.status === "stopped") segmentEnded();
+      if (data.status !== "stopped" || !live) return;
+      // Nový start by zrušil rozpoznávač dřív, než pošle poslední slova.
+      awaitingFinal = true;
+      segmentEnded(undefined, FINAL_WAIT_MS);
     });
+
+    // Chybu "nic jsem neslyšel" plugin posílá na už vyřízené volání `start`,
+    // takže do JS nedorazí a úsek tiše umře - lišta by dál hlásila "Poslouchám".
+    // Proto se ptáme sami: když úsek běží a plugin neposlouchá, skončil.
+    watchdog = setInterval(() => {
+      if (!live || done || closing || Date.now() - segmentAt < WATCHDOG_MS) return;
+      void SpeechRecognition.isListening()
+        .then((r) => {
+          if (!r.listening) segmentEnded();
+        })
+        .catch(() => {});
+    }, WATCHDOG_MS);
 
     listen();
 
@@ -282,7 +324,7 @@ function startWeb(handlers: DictationHandlers): DictationStart {
   recognition.onerror = (event) => {
     const error = String(event.error ?? "");
     if (error === "not-allowed" || error === "service-not-allowed") {
-      finish("denied", "Bez přístupu k mikrofonu diktovat nejde.");
+      finish("denied", "Povol ho v Nastavení telefonu → Aplikace → BetterNotes → Oprávnění → Mikrofon.");
       return;
     }
     // Zbytek („neslyšel jsem", přerušené spojení) uzavře `onend` a poslouchá
@@ -300,7 +342,7 @@ function startWeb(handlers: DictationHandlers): DictationStart {
 
     broken = Date.now() - segmentAt < TOO_QUICK_MS ? broken + 1 : 0;
     if (broken >= MAX_BROKEN) return finish("error", "Rozpoznávač se pořád vypíná.");
-    if (Date.now() - heardAt > QUIET_LIMIT_MS) return finish();
+    if (Date.now() - heardAt > QUIET_LIMIT_MS) return finish(undefined, QUIET_MESSAGE);
 
     timer = setTimeout(listenAgain, RESTART_MS);
   };

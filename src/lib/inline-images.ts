@@ -92,3 +92,15 @@ export function removeImageMarker(text: string, name: string): string {
   );
   return out.replace(/\n{3,}/g, "\n\n");
 }
+
+/**
+ * Přepíše jména fotek ve značkách podle mapy starý -> nový. Značky, které
+ * v mapě nejsou, zůstanou - fotka se pak ukáže jako chybějící, ale text
+ * kolem ní nezmizí.
+ */
+export function renameImageMarkers(text: string, renamed: Map<string, string>): string {
+  return text.replace(MARKER, (whole, alt: string, target: string) => {
+    const next = renamed.get(target);
+    return next ? `![${alt}](${next})` : whole;
+  });
+}

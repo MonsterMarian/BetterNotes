@@ -1,14 +1,10 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { NotebookPen, Settings, Trash2 } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { SettingsDialog } from "@/components/settings-dialog";
-import { closeTopBackLayer, useTrackNavigation } from "@/components/providers/use-app-back";
+import { closeTopBackLayer, hasInAppHistory, useTrackNavigation } from "@/components/providers/use-app-back";
 import { useStore } from "@/components/providers/store-provider";
-import { trashedNotes } from "@/lib/notes";
+import { useToast } from "@/components/providers/toast-provider";
 import { applyPendingUpdate, checkForUpdate, markBootSucceeded } from "@/lib/live-update";
 import { hideSplash, isNative, registerBackButton, syncStatusBar } from "@/lib/native";
 import { cn } from "@/lib/utils";
@@ -18,8 +14,11 @@ function normalizePath(pathname: string): string {
   return pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
 }
 
-/** Obrazovky, ze kterých tlačítko Zpět appku zavře - nikam výš už to nejde. */
-const ROOTS = ["/", "/trash"];
+/**
+ * Obrazovky, ze kterých tlačítko Zpět appku zavře - nikam výš už to nejde.
+ * Koš ani archiv sem nepatří: Zpět z nich vede na seznam, ne ven z appky.
+ */
+const ROOTS = ["/"];
 
 /**
  * Nativní chování appky: schování splash screenu po prvním vykreslení,
@@ -55,8 +54,12 @@ function useNativeShell() {
     void registerBackButton(() => {
       // Otevřená lupa nad detailem se zavře dřív, než se začne navigovat.
       if (closeTopBackLayer()) return true;
-      if (atRoot.current) return false;
-      router.back();
+      // "/?tag=…" (klepnutí na štítek v poznámce) je seznam, ale ne kořen: Zpět
+      // vede zpátky do poznámky, ne ven z appky.
+      if (atRoot.current && !window.location.search) return false;
+      // Studený start nebo reload přímo na podstránce: historie, kam se vrátit, není.
+      if (hasInAppHistory()) router.back();
+      else router.replace("/");
       return true;
     }).then((fn) => {
       cleanup = fn;
@@ -65,63 +68,49 @@ function useNativeShell() {
   }, [router]);
 }
 
+/**
+ * Hlášky o datech, které patří na jakoukoli obrazovku: selhané ukládání
+ * (typicky plný telefon) a obnova poznámek ze záložní kopie v souborech.
+ */
+function useDataToasts() {
+  const { saveFailed, restoredFromMirror } = useStore();
+  // Přes ref: hláška se má ukázat při změně stavu, ne při nové identitě `toast`.
+  const { toast } = useToast();
+  const toastRef = React.useRef(toast);
+  toastRef.current = toast;
+  const mirrorShown = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!saveFailed) return;
+    toastRef.current({
+      tone: "warn",
+      title: "Poznámky se nedaří uložit.",
+      description: "Telefon je možná plný. Zálohuj si je a uvolni místo.",
+    });
+  }, [saveFailed]);
+
+  React.useEffect(() => {
+    if (!restoredFromMirror || mirrorShown.current) return;
+    mirrorShown.current = true;
+    toastRef.current({ tone: "info", title: "Poznámky obnoveny ze záložní kopie" });
+  }, [restoredFromMirror]);
+}
+
+/**
+ * Rám appky bez vlastní lišty - každá obrazovka si nese svou horní lištu
+ * i odsazení, protože se liší (velký nadpis na seznamu, průhledná v detailu).
+ */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const { state, hydrated } = useStore();
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [native, setNative] = React.useState(false);
 
   useNativeShell();
   useTrackNavigation();
+  useDataToasts();
   React.useEffect(() => setNative(isNative()), []);
-
-  const inTrash = normalizePath(pathname) === "/trash";
-  const trashCount = hydrated ? trashedNotes(state).length : 0;
 
   return (
     <div className={cn("flex min-h-screen flex-col", native && "select-none")}>
-      <header className="mw-safe-top mw-safe-x sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-2 px-4">
-          <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-            <NotebookPen className="size-5 text-progress" />
-            BetterNotes
-          </Link>
-
-          <div className="ml-auto flex items-center gap-1">
-            <Link
-              href="/trash/"
-              aria-label="Koš"
-              title="Koš"
-              aria-current={inTrash ? "page" : undefined}
-              className={cn(
-                buttonVariants({ variant: inTrash ? "secondary" : "ghost", size: "icon" }),
-                "relative",
-              )}
-            >
-              <Trash2 />
-              {/* Tečka místo čísla: kolik je v koši položek není při procházení
-                  poznámek podstatné, jen jestli tam něco je. */}
-              {trashCount > 0 ? (
-                <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-destructive" />
-              ) : null}
-            </Link>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Nastavení"
-              title="Nastavení"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings />
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      {/* pt-5, ne py-5: spodní odsazení řeší mw-pad-nav a py-5 by ho přebilo. */}
-      <main className="mw-pad-nav mx-auto w-full max-w-3xl flex-1 px-4 pt-5">{children}</main>
-
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <main className="w-full flex-1">{children}</main>
     </div>
   );
 }

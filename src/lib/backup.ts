@@ -11,8 +11,9 @@
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import { readImage, saveImage } from "./images";
+import { renameImageMarkers } from "./inline-images";
 import { isNative } from "./native";
-import { getPrefs, parsePrefs, replacePrefs, THEME_KEY, type Prefs } from "./prefs";
+import { getPrefs, parsePrefs, replacePrefs, setPrefs, THEME_KEY, type Prefs } from "./prefs";
 import { parseState } from "./storage";
 import { STATE_VERSION, type BetterNotesState } from "./types";
 
@@ -102,29 +103,68 @@ export interface RestoredBackup {
   images: number;
 }
 
+/** Záloha rozebraná, ale ještě nic neuložila - fotky jsou pořád data URL. */
+export interface ParsedBackup {
+  state: BetterNotesState;
+  settings: BackupSettings;
+  images: Record<string, string>;
+}
+
+/**
+ * Rozebere text zálohy. Bere celou zálohu (`betternotes-backup`) i holý stav
+ * vytažený z localStorage - stav pozná podle toho, že nemá `state`. Starší
+ * verze stavu projdou migrací v `parseState`.
+ *
+ * Soubor bez seznamu poznámek se odmítne: obnovení přepisuje všechno, takže
+ * omylem vybraný cizí JSON by jinak tiše smazal celý zápisník.
+ */
+export function parseBackup(text: string): ParsedBackup {
+  const raw: unknown = JSON.parse(text);
+  if (typeof raw !== "object" || raw === null) throw new Error("Soubor není záloha BetterNotes.");
+  const r = raw as Record<string, unknown>;
+  const body = typeof r.state === "object" && r.state !== null ? (r.state as Record<string, unknown>) : r;
+  if (!Array.isArray(body.notes)) throw new Error("Soubor není záloha BetterNotes.");
+
+  const settings =
+    typeof r.settings === "object" && r.settings !== null
+      ? { ...(r.settings as BackupSettings), prefs: parsePrefs((r.settings as BackupSettings).prefs) }
+      : {};
+
+  const images: Record<string, string> = {};
+  if (typeof r.images === "object" && r.images !== null) {
+    for (const [name, dataUrl] of Object.entries(r.images)) {
+      if (typeof dataUrl === "string" && dataUrl.startsWith("data:")) images[name] = dataUrl;
+    }
+  }
+  return { state: parseState(body), settings, images };
+}
+
+/**
+ * Přejmenuje fotky ve stavu podle mapy starý -> nový: v `images` i ve
+ * značkách v textu. Fotka, která se neuložila, si nechá staré jméno: když
+ * soubor v telefonu pořád leží (obnova na stejném telefonu), úklid ho nesmaže;
+ * když neleží, značka se ukáže jako chybějící fotka, text kolem nezmizí.
+ */
+export function remapImages(state: BetterNotesState, renamed: Map<string, string>): BetterNotesState {
+  return {
+    ...state,
+    notes: state.notes.map((n) => ({
+      ...n,
+      text: renameImageMarkers(n.text, renamed),
+      images: n.images.map((name) => renamed.get(name) ?? name),
+    })),
+  };
+}
+
 /**
  * Přečte zálohu a fotky z ní uloží pod novými jmény - stará jména se mohou
  * krýt s tím, co už v telefonu leží. Jména v poznámkách se přepíšou na nová.
  */
 export async function restoreBackup(text: string): Promise<RestoredBackup> {
-  const raw = JSON.parse(text) as Record<string, unknown>;
-  // Holý stav i celá záloha: stav pozná podle toho, že nemá `state`.
-  const body = (typeof raw.state === "object" && raw.state !== null ? raw.state : raw) as unknown;
-  const state = parseState(body);
-
-  const settings =
-    typeof raw.settings === "object" && raw.settings !== null
-      ? { ...(raw.settings as BackupSettings), prefs: parsePrefs((raw.settings as BackupSettings).prefs) }
-      : {};
-
-  const images = (typeof raw.images === "object" && raw.images !== null ? raw.images : {}) as Record<
-    string,
-    unknown
-  >;
+  const { state, settings, images } = parseBackup(text);
 
   const renamed = new Map<string, string>();
   for (const [oldName, dataUrl] of Object.entries(images)) {
-    if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) continue;
     try {
       renamed.set(oldName, await saveImage(dataUrl));
     } catch {
@@ -132,17 +172,17 @@ export async function restoreBackup(text: string): Promise<RestoredBackup> {
     }
   }
 
-  return {
-    state: {
-      ...state,
-      notes: state.notes.map((n) => ({
-        ...n,
-        images: n.images.map((name) => renamed.get(name)).filter((n2): n2 is string => !!n2),
-      })),
-    },
-    settings,
-    images: renamed.size,
-  };
+  return { state: remapImages(state, renamed), settings, images: renamed.size };
+}
+
+/**
+ * Připomínka zálohy: má smysl, až je co ztratit (5+ poznámek), záloha je
+ * starší než 14 dní a uživatel ji neodložil v posledních 7 dnech.
+ */
+export function needsBackupNudge(prefs: Prefs, noteCount: number, now: Date = new Date()): boolean {
+  const DAY = 86_400_000;
+  const olderThan = (iso: string, days: number) => !iso || now.getTime() - Date.parse(iso) > days * DAY;
+  return noteCount >= 5 && olderThan(prefs.lastBackupAt, 14) && olderThan(prefs.backupNudgeDismissedAt, 7);
 }
 
 // --- export ven -------------------------------------------------------------
@@ -165,6 +205,7 @@ export async function exportBackup(state: BetterNotesState): Promise<void> {
     });
     const { uri } = await Filesystem.getUri({ path: name, directory: Directory.Cache });
     await Share.share({ title: "Záloha BetterNotes", url: uri });
+    setPrefs({ lastBackupAt: new Date().toISOString() });
     return;
   }
 
@@ -173,6 +214,7 @@ export async function exportBackup(state: BetterNotesState): Promise<void> {
   link.href = url;
   link.download = name;
   link.click();
+  setPrefs({ lastBackupAt: new Date().toISOString() });
   // Odvolat hned by stahování v některých prohlížečích uřízlo.
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
@@ -183,7 +225,9 @@ export function pickBackupFile(): Promise<string | null> {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "application/json,.json";
+    let picked = false;
     input.onchange = () => {
+      picked = true;
       const file = input.files?.[0];
       if (!file) return resolve(null);
       const reader = new FileReader();
@@ -191,7 +235,9 @@ export function pickBackupFile(): Promise<string | null> {
       reader.onerror = () => resolve(null);
       reader.readAsText(file);
     };
-    window.addEventListener("focus", () => setTimeout(() => resolve(null), 800), { once: true });
+    // Zrušený dialog neohlásí nic. Velký soubor se ale čte déle než 800 ms,
+    // takže pojistka platí jen, když `onchange` nepřišel vůbec.
+    window.addEventListener("focus", () => setTimeout(() => !picked && resolve(null), 800), { once: true });
     input.click();
   });
 }

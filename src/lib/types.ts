@@ -18,7 +18,7 @@ export type ISOStamp = string;
  * volných barev by byl seznam poznámek nečitelný a v tmavém režimu půlka
  * z nich mizí. Barvy samotné kreslí CSS podle `data-tone`.
  */
-export type NoteTone = "none" | "amber" | "green" | "blue" | "rose" | "violet";
+export type NoteTone = "none" | "amber" | "green" | "blue" | "rose" | "violet" | "sand";
 
 export const NOTE_TONES: { id: NoteTone; label: string }[] = [
   { id: "none", label: "Bez barvy" },
@@ -27,6 +27,7 @@ export const NOTE_TONES: { id: NoteTone; label: string }[] = [
   { id: "blue", label: "Modrá" },
   { id: "rose", label: "Růžová" },
   { id: "violet", label: "Fialová" },
+  { id: "sand", label: "Písková" },
 ];
 
 export interface Note {
@@ -47,6 +48,10 @@ export interface Note {
    * jedním ťuknutím na telefonu je moc snadné.
    */
   deletedAt?: ISOStamp;
+  /** Archivovaná: schovaná z hlavního seznamu, ale hledání ji najde. Metadata, ne obsah. */
+  archivedAt?: ISOStamp;
+  /** Jen u denních poznámek: den, ke kterému patří. Metadata. */
+  day?: ISODate;
 }
 
 export interface BetterNotesState {
@@ -55,7 +60,7 @@ export interface BetterNotesState {
 }
 
 /** Zvedá se, když se změní tvar dat a je potřeba migrace v `storage.ts`. */
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 
 export const EMPTY_STATE: BetterNotesState = {
   version: STATE_VERSION,

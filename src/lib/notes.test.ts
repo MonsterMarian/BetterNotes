@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeNotes,
   addNote,
   addTag,
+  archiveNote,
+  archivedNotes,
+  extractHashtags,
+  findDailyNote,
+  noteTags,
+  putNotes,
+  tagMatches,
+  unarchiveNote,
   dropEmptyNotes,
   emptyTrash,
   fold,
@@ -52,6 +61,9 @@ describe("noteTitle", () => {
 
   it("bez titulku sáhne po prvním neprázdném řádku", () => {
     expect(noteTitle(note({ text: "\n\n  Zavolat Petrovi\nzítra" }))).toBe("Zavolat Petrovi");
+    expect(noteTitle(note({ text: "1. **Fakt** a _kurzíva_ ~~pryč~~ snake_case" }))).toBe(
+      "Fakt a kurzíva pryč snake_case",
+    );
   });
 
   it("dlouhý první řádek zkrátí", () => {
@@ -75,6 +87,7 @@ describe("noteExcerpt", () => {
 
   it("s vyplněným titulkem ukazuje text celý", () => {
     expect(noteExcerpt(note({ title: "Nákup", text: "mléko\nchleba" }))).toBe("mléko chleba");
+    expect(noteExcerpt(note({ title: "N", text: "- [ ] chleba\n- [x] **máslo**" }))).toBe("chleba máslo");
   });
 
   it("dlouhý text zkrátí", () => {
@@ -112,6 +125,9 @@ describe("hledání", () => {
   it("ignoruje diakritiku a velikost písmen", () => {
     expect(fold("Zítra Přijít")).toBe("zitra prijit");
     expect(matchesQuery(note({ text: "Zítra přijít" }), "zitra")).toBe(true);
+    // Skloňování: dotaz v 1. pádě najde slovo v jiném tvaru.
+    expect(matchesQuery(note({ text: "rohlíky s máslem" }), "rohliky maslo")).toBe(true);
+    expect(matchesQuery(note({ text: "rohlíky s máslem" }), "pes")).toBe(false);
   });
 
   it("všechna slova dotazu musí sedět", () => {
@@ -301,5 +317,133 @@ describe("isEmptyNote", () => {
     expect(isEmptyNote(note({ title: "  ", text: "\n" }))).toBe(true);
     expect(isEmptyNote(note({ images: ["i.jpg"] }))).toBe(false);
     expect(isEmptyNote(note({ text: "x" }))).toBe(false);
+  });
+});
+
+describe("archiv", () => {
+  it("archivace ani vrácení neposune updatedAt", () => {
+    const before = stateWith(note({ id: "a", pinned: true }));
+    const archived = archiveNote(before, "a", new Date("2026-05-05T08:00:00.000Z"));
+    expect(archived.notes[0]).toMatchObject({ archivedAt: "2026-05-05T08:00:00.000Z", pinned: false });
+    expect(archived.notes[0].updatedAt).toBe(before.notes[0].updatedAt);
+    expect(activeNotes(archived)).toHaveLength(0);
+    expect(archivedNotes(archived)).toHaveLength(1);
+
+    const back = unarchiveNote(archived, "a");
+    expect("archivedAt" in back.notes[0]).toBe(false);
+    expect(back.notes[0].updatedAt).toBe(before.notes[0].updatedAt);
+  });
+
+  it("koš archiv zruší", () => {
+    const archived = archiveNote(stateWith(note({ id: "a" })), "a");
+    const trashed = trashNote(archived, "a");
+    expect("archivedAt" in trashed.notes[0]).toBe(false);
+    expect(trashed.notes[0].deletedAt).toBeDefined();
+    expect(archivedNotes(trashed)).toHaveLength(0);
+  });
+});
+
+describe("putNotes", () => {
+  it("vrátí smazanou poznámku přesně, jak byla", () => {
+    const original = note({ id: "a", text: "x", pinned: true });
+    const trashed = trashNote(stateWith(original, note({ id: "b" })), "a");
+    const back = putNotes(trashed, [original]);
+    expect(back.notes[0]).toEqual(original);
+    expect(back.notes.map((n) => n.id)).toEqual(["a", "b"]);
+  });
+
+  it("poznámku, která už ve stavu není, vloží na začátek", () => {
+    const back = putNotes(stateWith(note({ id: "b" })), [note({ id: "a" })]);
+    expect(back.notes.map((n) => n.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("isEmptyNote se značkami seznamu", () => {
+  it("osamělá značka je prázdná poznámka", () => {
+    for (const text of ["- [ ] ", "- ", "1. ", "> ", "## ", "- [ ] \n- [x]\n  * "]) {
+      expect(isEmptyNote(note({ text }))).toBe(true);
+    }
+  });
+
+  it("značka s textem prázdná není", () => {
+    expect(isEmptyNote(note({ text: "- [ ] mléko" }))).toBe(false);
+    expect(isEmptyNote(note({ text: "- [ ] ", title: "Nákup" }))).toBe(false);
+  });
+});
+
+describe("štítky v textu", () => {
+  it("noteTags spojí ruční a #štítky z textu bez opakování", () => {
+    const n = note({ tags: ["nakup"], text: "Koupit #Nákup a #nakup, pak #prace/projekt.\n(#doma)" });
+    expect(noteTags(n)).toEqual(["nakup", "nákup", "prace/projekt", "doma"]);
+  });
+
+  it("nadpis ani kotva v odkazu nejsou štítek", () => {
+    expect(extractHashtags("# Nadpis\n## Druhý\nhttps://a.cz/#sekce\nslovo#ne")).toEqual([]);
+    expect(extractHashtags("#prace/projekt")).toEqual(["prace/projekt"]);
+  });
+
+  it("filtr nadřazeného štítku najde i vnořené", () => {
+    expect(tagMatches("prace/projekt", "prace")).toBe(true);
+    expect(tagMatches("prace", "prace")).toBe(true);
+    expect(tagMatches("pracevne", "prace")).toBe(false);
+    expect(tagMatches("prace", "prace/projekt")).toBe(false);
+  });
+
+  it("tagCounts počítá i štítky z textu", () => {
+    const state = stateWith(note({ id: "a", text: "#doma" }), note({ id: "b", tags: ["doma"] }));
+    expect(tagCounts(state)).toEqual([{ tag: "doma", count: 2 }]);
+  });
+});
+
+describe("visibleNotes s rychlými filtry", () => {
+  const state = stateWith(
+    note({ id: "pin", title: "Připnutá", pinned: true, tags: ["x"] }),
+    note({ id: "todo", title: "Úkoly", text: "- [ ] a\n- [x] b", tags: ["x"] }),
+    note({ id: "done", title: "Hotovo", text: "- [x] a", tags: ["x"] }),
+    note({ id: "photo", title: "Fotka", images: ["i.jpg"], text: "#x" }),
+    note({ id: "bare", title: "Holá", tone: "sand" }),
+    note({ id: "arch", title: "Archivní mléko", archivedAt: "2026-02-01T00:00:00.000Z" }),
+  );
+  const ids = (f: Parameters<typeof visibleNotes>[1]) => visibleNotes(state, f).map((n) => n.id).sort();
+
+  it("každý rychlý filtr", () => {
+    expect(ids({ quick: "all" })).toEqual(["bare", "done", "photo", "pin", "todo"]);
+    expect(ids({ quick: "pinned" })).toEqual(["pin"]);
+    expect(ids({ quick: "todo" })).toEqual(["todo"]);
+    expect(ids({ quick: "photos" })).toEqual(["photo"]);
+    expect(ids({ quick: "untagged" })).toEqual(["bare"]);
+  });
+
+  it("barva a štítek", () => {
+    expect(ids({ tone: "sand" })).toEqual(["bare"]);
+    expect(ids({ tag: "x" })).toEqual(["done", "photo", "pin", "todo"]);
+  });
+
+  it("archiv zvlášť, s dotazem i na hlavní obrazovce", () => {
+    expect(ids({ scope: "archive" })).toEqual(["arch"]);
+    expect(ids({ query: "mleko" })).toEqual(["arch"]);
+    expect(ids({ query: "mleko", scope: "archive" })).toEqual(["arch"]);
+  });
+});
+
+describe("denní poznámka", () => {
+  it("noteTitle bez titulku vezme den a náhled nepřeskočí první řádek", () => {
+    const n = note({ day: "2026-11-13", text: "první\ndruhý" });
+    expect(noteTitle(n)).toBe("Pátek 13. listopadu");
+    expect(noteExcerpt(n)).toBe("první druhý");
+    expect(noteTitle({ ...n, title: "Vlastní" })).toBe("Vlastní");
+  });
+
+  it("findDailyNote najde poznámku dne mimo koš", () => {
+    const state = stateWith(
+      note({ id: "smazana", day: "2026-11-13", deletedAt: "2026-11-13T12:00:00.000Z" }),
+      note({ id: "dnes", day: "2026-11-13" }),
+    );
+    expect(findDailyNote(state, "2026-11-13")?.id).toBe("dnes");
+    expect(findDailyNote(state, "2026-11-12")).toBeUndefined();
+  });
+
+  it("titulek ze seznamu bez značky úkolu", () => {
+    expect(noteTitle(note({ text: "- [ ] mléko\n- [ ] chleba" }))).toBe("mléko");
   });
 });

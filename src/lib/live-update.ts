@@ -19,6 +19,7 @@ import { isNative } from "./native";
  * k adrese `localhost`, kterou výměna souborů nemění.
  */
 
+const APK_ASSET_DIR = "public";
 const URL_KEY = "betternotes:ota:url";
 const CURRENT_KEY = "betternotes:ota:current";
 const PENDING_KEY = "betternotes:ota:pending";
@@ -211,8 +212,11 @@ export async function applyPendingUpdate(): Promise<ApplyResult> {
         "WebView.getServerBasePath",
       ).catch(() => ({ path: "" }));
 
-      if (active.path) {
-        void WebView.setServerBasePath({ path: "" });
+      // "public" = soubory z APK (Capacitor DEFAULT_WEB_ASSET_DIR), tam je všechno v pořádku.
+      // Návrat přes setServerBasePath({path:""}) by servíroval kořen disku a appka
+      // by na čerstvé instalaci ukázala jen "Webová stránka není k dispozici".
+      if (active.path && active.path !== APK_ASSET_DIR) {
+        void WebView.setServerAssetPath({ path: APK_ASSET_DIR });
         void WebView.persistServerBasePath();
         setTimeout(() => {
           try {
@@ -343,7 +347,10 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
     }
 
     const current = currentBundleVersion();
-    if (manifest.version === current) return { kind: "up-to-date", version: current };
+    // Verze je razítko "RRRR.MM.DD.HH.MM" pevné délky, takže řetězce jdou porovnat
+    // přímo. Starší balík na serveru (APK je novější než poslední push) se nestahuje -
+    // jinak by čerstvě nainstalovaná appka sama sjela na starou verzi.
+    if (current && manifest.version <= current) return { kind: "up-to-date", version: current };
 
     // Stažené už to je, jen se to nenasadilo. Typicky proto, že se od stažení
     // appka nerestartovala - ale taky proto, že nasazení spadlo. V obou

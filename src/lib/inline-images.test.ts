@@ -3,6 +3,7 @@ import {
   insertImageMarker,
   referencedImages,
   removeImageMarker,
+  renameImageMarkers,
   splitNoteBody,
   stripImageMarkers,
   trailingImages,
@@ -83,5 +84,12 @@ describe("text bez značek", () => {
   it("kulaté závorky v běžném textu se nepletou se značkou", () => {
     const text = "cena (asi 300) a odkaz [web](https://example.com)";
     expect(stripImageMarkers(text)).toBe(text);
+  });
+});
+
+describe("renameImageMarkers", () => {
+  it("přejmenuje jen fotky z mapy, popisek nechá", () => {
+    const renamed = new Map([["a.jpg", "b.jpg"]]);
+    expect(renameImageMarkers("x\n![popis](a.jpg)\n![](c.jpg)", renamed)).toBe("x\n![popis](b.jpg)\n![](c.jpg)");
   });
 });

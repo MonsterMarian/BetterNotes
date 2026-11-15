@@ -1,14 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Download, Moon, RefreshCw, Sun, Upload } from "lucide-react";
+import { ChevronDown, Download, RefreshCw, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { AccountSection } from "@/components/account-section";
+import { Segmented } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
+import { AccountSection, ProjectUrlField } from "@/components/account-section";
 import { useStore } from "@/components/providers/store-provider";
+import { usePrefs } from "@/components/providers/use-prefs";
 import { useToast } from "@/components/providers/toast-provider";
 import { applySettings, exportBackup, pickBackupFile, restoreBackup } from "@/lib/backup";
-import { applyTheme, currentTheme, type Theme } from "@/lib/prefs";
+import { formatStamp } from "@/lib/date";
 import {
   applyPendingUpdate,
   checkForUpdate,
@@ -16,53 +19,27 @@ import {
   lastApplyError,
   pendingBundleVersion,
 } from "@/lib/live-update";
-import { isNative, syncStatusBar } from "@/lib/native";
-import { noteCount } from "@/lib/notes";
+import { isNative } from "@/lib/native";
+import { setPrefs } from "@/lib/prefs";
+import { isSupabaseConfigured, SUPABASE_ANON_KEY } from "@/lib/supabase";
 import { cn, plural } from "@/lib/utils";
+
+const TAGLINE = "Bez účtu. Bez limitů. Tvoje data zůstávají v telefonu.";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-2.5 border-t pt-4 first:border-t-0 first:pt-0">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h3>
+    <section className="flex flex-col gap-3">
+      <h3 className="text-title-sm text-primary">{title}</h3>
       {children}
     </section>
   );
 }
 
-function ThemeToggle() {
-  const [theme, setTheme] = React.useState<Theme>("dark");
-  React.useEffect(() => setTheme(currentTheme()), []);
-
-  const pick = (next: Theme) => {
-    setTheme(next);
-    applyTheme(next);
-    void syncStatusBar(next === "dark");
-  };
-
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {(
-        [
-          { id: "light", label: "Světlé", icon: Sun },
-          { id: "dark", label: "Tmavé", icon: Moon },
-        ] as const
-      ).map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          type="button"
-          aria-pressed={theme === id}
-          onClick={() => pick(id)}
-          className={cn(
-            "flex items-center gap-2 rounded-lg border p-3 text-sm transition-colors hover:bg-accent",
-            theme === id && "ring-2 ring-ring",
-          )}
-        >
-          <Icon className="size-4" />
-          {label}
-        </button>
-      ))}
+    <div className="flex flex-col gap-2">
+      <p className="text-body-lg text-on-surface">{label}</p>
+      {children}
     </div>
   );
 }
@@ -130,8 +107,8 @@ function UpdateSection() {
   };
 
   return (
-    <Section title="Aktualizace">
-      <p className="text-xs text-muted-foreground">
+    <div className="flex flex-col gap-2.5">
+      <p className="text-body-md text-on-surface-variant">
         Běží verze <span className="tabular">{current ?? "—"}</span>
         {pending ? (
           <>
@@ -140,27 +117,20 @@ function UpdateSection() {
         ) : null}
       </p>
 
-      {error ? (
-        <p className="text-xs text-destructive">Poslední nasazení selhalo: {error}</p>
-      ) : null}
+      {error ? <p className="text-body-md text-error">Poslední nasazení selhalo: {error}</p> : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" size="sm" className="flex-1" disabled={checking} onClick={() => void check()}>
+        <Button variant="tonal" size="sm" disabled={checking} onClick={() => void check()}>
           <RefreshCw className={cn(checking && "animate-spin")} />
-          {checking ? "Hledám…" : "Zkontrolovat"}
+          {checking ? "Hledám…" : "Zkontrolovat aktualizace"}
         </Button>
         {pending ? (
-          <Button
-            size="sm"
-            className="bg-progress text-progress-foreground hover:bg-progress/90"
-            disabled={applying}
-            onClick={() => void apply()}
-          >
+          <Button variant="filled" size="sm" disabled={applying} onClick={() => void apply()}>
             {applying ? "Nasazuji…" : "Nasadit teď"}
           </Button>
         ) : null}
       </div>
-    </Section>
+    </div>
   );
 }
 
@@ -172,16 +142,24 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { state, replace } = useStore();
+  const prefs = usePrefs();
   const { toast } = useToast();
   const [native, setNative] = React.useState(false);
+  // Adresa Supabase bydlí v localStorage, při předgenerování stránky není známá.
+  const [configured, setConfigured] = React.useState(false);
   const [working, setWorking] = React.useState(false);
+  const [confirmRestore, setConfirmRestore] = React.useState(false);
 
-  React.useEffect(() => setNative(isNative()), []);
+  React.useEffect(() => {
+    setNative(isNative());
+    setConfigured(isSupabaseConfigured());
+  }, []);
 
   const doExport = async () => {
     setWorking(true);
     try {
       await exportBackup(state);
+      toast({ tone: "success", title: "Záloha připravena" });
     } catch (e) {
       toast({ tone: "warn", title: "Záloha selhala", description: String(e).slice(0, 120) });
     } finally {
@@ -190,6 +168,7 @@ export function SettingsDialog({
   };
 
   const doImport = async () => {
+    setConfirmRestore(false);
     const text = await pickBackupFile();
     if (!text) return;
     setWorking(true);
@@ -197,11 +176,8 @@ export function SettingsDialog({
       const res = await restoreBackup(text);
       replace(res.state);
       applySettings(res.settings);
-      toast({
-        tone: "success",
-        title: "Záloha načtena",
-        description: `${res.state.notes.length} ${plural(res.state.notes.length, "poznámka", "poznámky", "poznámek")}, ${res.images} ${plural(res.images, "fotka", "fotky", "fotek")}.`,
-      });
+      const n = res.state.notes.length;
+      toast({ tone: "success", title: `Obnoveno: ${n} ${plural(n, "poznámka", "poznámky", "poznámek")}` });
       onOpenChange(false);
     } catch (e) {
       toast({
@@ -214,66 +190,117 @@ export function SettingsDialog({
     }
   };
 
-  const count = noteCount(state);
+  const urlField = !configured && SUPABASE_ANON_KEY.length > 0;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title="Nastavení"
-      /*
-        Pevná výška a místo pod obsahem, ať se dá vytáhnout nahoru.
-        Poslední volba sedí u dolní hrany přesně tam, kde má uživatel palec,
-        kterým roluje - přečíst ji znamenalo dívat se pod vlastní ruku. Výška
-        je pevná schválně: kdyby se panel měřil podle obsahu, ta rezerva by ho
-        jen nafoukla a nastavení by se pořád nedalo posunout.
-      */
-      className="h-[88dvh] pb-[calc(33dvh+var(--mw-safe-bottom))]"
-    >
-      <div className="flex flex-col gap-4">
+    <Dialog open={open} onOpenChange={onOpenChange} title="Nastavení" variant="fullscreen">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 pt-2">
         <Section title="Vzhled">
-          <ThemeToggle />
+          <Row label="Písmo poznámek">
+            <Segmented
+              aria-label="Písmo poznámek"
+              value={prefs.editorFont}
+              options={[
+                { id: "sans", label: "Bezpatkové" },
+                { id: "serif", label: "Patkové" },
+              ]}
+              onChange={(editorFont) => setPrefs({ editorFont })}
+            />
+          </Row>
+          <Row label="Zobrazení">
+            <Segmented
+              aria-label="Zobrazení"
+              value={prefs.view}
+              options={[
+                { id: "list", label: "Seznam" },
+                { id: "grid", label: "Mřížka" },
+              ]}
+              onChange={(view) => setPrefs({ view })}
+            />
+          </Row>
         </Section>
 
-        <Section title="Odesílání do počítače">
-          <AccountSection />
+        <Section title="Psaní">
+          <Switch
+            label="Hotové úkoly přesouvat dolů"
+            checked={prefs.sinkChecked}
+            onCheckedChange={(sinkChecked) => setPrefs({ sinkChecked })}
+          />
+          <Switch
+            label="Vibrace"
+            description="Jemná odezva při mazání, zaškrtnutí a výběru"
+            checked={prefs.haptics}
+            onCheckedChange={(haptics) => setPrefs({ haptics })}
+          />
         </Section>
 
-        <Section title="Data">
-          <p className="text-xs text-muted-foreground">
-            {count} {plural(count, "poznámka", "poznámky", "poznámek")} v telefonu. Samy od sebe
-            nikam neodcházejí - ven jde jen to, co ručně odešleš do počítače. Odinstalace
-            appky je smaže, takže záloha je jediná pojistka.
+        <Section title="Záloha">
+          <p className="text-body-md text-on-surface-variant">
+            {prefs.lastBackupAt
+              ? `Poslední záloha: ${formatStamp(prefs.lastBackupAt)}`
+              : "Zatím jsi nezálohoval."}
           </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="flex-1"
-              disabled={working}
-              onClick={() => void doExport()}
-            >
+          <div className="flex flex-wrap gap-2">
+            <Button variant="filled" disabled={working} onClick={() => void doExport()}>
               <Download />
-              Zálohovat
+              Zálohovat teď
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="flex-1"
-              disabled={working}
-              onClick={() => void doImport()}
-            >
+            <Button variant="outline" disabled={working} onClick={() => setConfirmRestore(true)}>
               <Upload />
-              Načíst zálohu
+              Obnovit ze zálohy
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Načtení zálohy přepíše všechny poznámky v telefonu.
+          <p className="text-body-sm text-on-surface-variant">
+            Poznámky jsou jen v tomhle telefonu. Odinstalováním appky zmizí, záloha je jediná pojistka.
           </p>
         </Section>
 
-        {native ? <UpdateSection /> : null}
+        {configured ? (
+          <Section title="Odeslat do počítače">
+            <AccountSection />
+          </Section>
+        ) : null}
+
+        <Section title="O aplikaci">
+          <div className="flex flex-col gap-1">
+            <p className="text-body-lg text-on-surface">
+              BetterNotes <span className="tabular">{process.env.NEXT_PUBLIC_BUNDLE_VERSION ?? ""}</span>
+            </p>
+            <p className="text-body-md text-on-surface-variant">{TAGLINE}</p>
+          </div>
+
+          {native || urlField ? (
+            <details className="group rounded-lg bg-surface-container">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 px-4 text-label-lg text-on-surface [&::-webkit-details-marker]:hidden">
+                Pro pokročilé
+                <ChevronDown className="size-5 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="flex flex-col gap-4 px-4 pb-4">
+                {native ? <UpdateSection /> : null}
+                {urlField ? <ProjectUrlField onSaved={() => setConfigured(isSupabaseConfigured())} /> : null}
+              </div>
+            </details>
+          ) : null}
+        </Section>
       </div>
+
+      <Dialog
+        open={confirmRestore}
+        onOpenChange={setConfirmRestore}
+        variant="center"
+        title="Obnovit ze zálohy?"
+        description="Současné poznámky se nahradí obsahem zálohy."
+        footer={
+          <>
+            <Button variant="text" onClick={() => setConfirmRestore(false)}>
+              Zrušit
+            </Button>
+            <Button variant="filled" onClick={() => void doImport()}>
+              Obnovit
+            </Button>
+          </>
+        }
+      />
     </Dialog>
   );
 }
