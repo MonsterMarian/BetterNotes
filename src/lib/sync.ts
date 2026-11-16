@@ -14,7 +14,7 @@
 import { imageBlob } from "./images";
 import { friendlyError, IMAGES_BUCKET, NOTES_TABLE, supabase } from "./supabase";
 import type { Note } from "./types";
-import { noteTitle } from "./notes";
+import { isEmptyNote, noteTitle } from "./notes";
 
 export type SyncResult =
   | { ok: true; images: number }
@@ -204,6 +204,51 @@ export async function sendAllNotes(
   }
 
   return result;
+}
+
+/** Co už je v databázi: id poznámky → `updatedAt` odeslané verze. */
+export type SentLog = Record<string, string>;
+
+const SENT_KEY = "betternotes:sent";
+
+/** Poznámky, jejichž aktuální podoba v databázi ještě není. Prázdné se neposílají. */
+export function notesToSend(notes: Note[], sent: SentLog): Note[] {
+  return notes.filter((n) => !isEmptyNote(n) && sent[n.id] !== n.updatedAt);
+}
+
+function readSent(): SentLog {
+  try {
+    return JSON.parse(localStorage.getItem(SENT_KEY) ?? "{}") as SentLog;
+  } catch {
+    return {};
+  }
+}
+
+let autoRunning = false;
+
+/**
+ * Automatické ukládání: pošle do databáze všechno, co se od minula změnilo.
+ * Nepřihlášený / offline = tiché nic; zkusí se to při další změně nebo návratu
+ * do appky. Do koše nic nedává (`trashAfterSync` platí jen pro ruční odeslání).
+ */
+export async function autoSend(notes: Note[]): Promise<void> {
+  if (autoRunning) return;
+  autoRunning = true;
+  try {
+    const { data } = await supabase().auth.getSession();
+    if (!data.session) return;
+    const sent = readSent();
+    for (const note of notesToSend(notes, sent)) {
+      const res = await sendNote(note);
+      if (!res.ok) break; // offline nebo výpadek - zbytek počká na další pokus
+      sent[note.id] = note.updatedAt;
+      localStorage.setItem(SENT_KEY, JSON.stringify(sent));
+    }
+  } catch {
+    // shortcut: chyby automatu se nehlásí, ruční "Odeslat všechny" je ukáže
+  } finally {
+    autoRunning = false;
+  }
 }
 
 /** Kolik poznámek čeká, než si je počítač vyzvedne. */

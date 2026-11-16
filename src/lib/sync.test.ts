@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { noteToRow, sendAllNotes, sendNote } from "./sync";
+import { notesToSend, noteToRow, sendAllNotes, sendNote } from "./sync";
 import type { Note } from "./types";
 
 /*
@@ -66,6 +66,17 @@ function note(patch: Partial<Note> = {}): Note {
 }
 
 const SENT_AT = new Date("2026-03-01T08:00:00.000Z");
+
+describe("notesToSend", () => {
+  it("pošle novou a změněnou, ne už odeslanou ani prázdnou", () => {
+    const fresh = note({ id: "a", text: "nová" });
+    const same = note({ id: "b", text: "beze změny" });
+    const changed = note({ id: "c", text: "upravená", updatedAt: "2026-02-02T00:00:00.000Z" });
+    const empty = note({ id: "d" });
+    const sent = { b: same.updatedAt, c: "2026-02-01T12:00:00.000Z" };
+    expect(notesToSend([fresh, same, changed, empty], sent).map((n) => n.id)).toEqual(["a", "c"]);
+  });
+});
 
 describe("noteToRow", () => {
   it("přenese obsah i časy z telefonu", () => {

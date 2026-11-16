@@ -6,6 +6,8 @@ import { deleteImages, listImages } from "@/lib/images";
 import { toggleTaskAt } from "@/lib/checklist";
 import { isNative } from "@/lib/native";
 import { getPrefs } from "@/lib/prefs";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import { autoSend } from "@/lib/sync";
 import * as notes from "@/lib/notes";
 import { EMPTY_STATE, type BetterNotesState, type Note } from "@/lib/types";
 
@@ -67,6 +69,7 @@ export function useNote(id: string): Note | undefined {
 
 const SAVE_DELAY = 250;
 const MIRROR_DELAY = 3000;
+const AUTO_SEND_DELAY = 3000;
 
 function many(
   ids: string[],
@@ -167,6 +170,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (hydrated) persist.schedule();
   }, [state, hydrated, persist]);
+
+  // Automatické ukládání do databáze: pár sekund po poslední změně, ať se
+  // neposílá každá klávesa. Bez nastaveného Supabase se na klienta nesahá.
+  React.useEffect(() => {
+    if (!hydrated || !isSupabaseConfigured()) return;
+    const timer = window.setTimeout(() => void autoSend(notes.liveNotes(stateRef.current)), AUTO_SEND_DELAY);
+    return () => window.clearTimeout(timer);
+  }, [state, hydrated]);
+
+  // Po návratu do appky / obnovení sítě dožene, co předtím neprošlo.
+  React.useEffect(() => {
+    if (!hydrated || !isSupabaseConfigured()) return;
+    const retry = () => {
+      if (document.visibilityState === "visible") void autoSend(notes.liveNotes(stateRef.current));
+    };
+    document.addEventListener("visibilitychange", retry);
+    window.addEventListener("online", retry);
+    return () => {
+      document.removeEventListener("visibilitychange", retry);
+      window.removeEventListener("online", retry);
+    };
+  }, [hydrated]);
 
   React.useEffect(() => {
     const onHide = () => {

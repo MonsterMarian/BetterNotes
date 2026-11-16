@@ -11,6 +11,7 @@ import { useToast } from "@/components/providers/toast-provider";
 import { setPrefs } from "@/lib/prefs";
 import { liveNotes } from "@/lib/notes";
 import {
+  autoSend,
   currentAccount,
   pendingCount,
   sendAllNotes,
@@ -153,7 +154,8 @@ export function AccountSection() {
     }
 
     setPassword("");
-    void refresh();
+    // Po přihlášení hned nahrát, co v telefonu je - nečekat na první úpravu.
+    void autoSend(live).then(refresh);
     toast({ tone: "success", title: "Přihlášeno" });
   };
 
@@ -223,9 +225,8 @@ export function AccountSection() {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-body-md text-on-surface-variant">
-        Přihlas se stejným účtem jako v MicroWins (účty jsou společné). Poznámka
-        pak počká v databázi, dokud si ji počítač nevyzvedne — nemusí být
-        zapnutý ani na stejné Wi-Fi.
+        Přihlas se stejným účtem jako v MicroWins (účty jsou společné). Každá
+        nová nebo upravená poznámka se pak sama uloží do databáze.
       </p>
 
       <Field label="E-mail">
