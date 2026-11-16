@@ -20,50 +20,8 @@ import {
   signUp,
   type Account,
 } from "@/lib/sync";
-import { isSupabaseConfigured, setSupabaseUrl, supabaseUrl } from "@/lib/supabase";
+import { isSupabaseConfigured, supabaseUrl } from "@/lib/supabase";
 import { plural } from "@/lib/utils";
-
-/**
- * Adresa Supabase projektu (Nastavení → Pro pokročilé).
- *
- * Ukazuje se jen dokud adresa není známá - typicky když ji build nedostal.
- * Bez tohohle pole by uživatel čekal na nový balík; adresa je krátká, takže
- * se dá opsat i na telefonu.
- */
-export function ProjectUrlField({ onSaved }: { onSaved: () => void }) {
-  const [url, setUrl] = React.useState("");
-
-  return (
-    <div className="flex flex-col gap-2.5">
-      <Field
-        label="Adresa Supabase projektu"
-        hint="Najdeš ji v adresním řádku dashboardu: supabase.com/dashboard/project/abcdefgh → adresa je abcdefgh.supabase.co"
-      >
-        <Input
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="abcdefgh.supabase.co"
-          inputMode="url"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-        />
-      </Field>
-      <Button
-        variant="filled"
-        size="sm"
-        className="self-start"
-        disabled={!url.trim()}
-        onClick={() => {
-          setSupabaseUrl(url);
-          onSaved();
-        }}
-      >
-        Uložit
-      </Button>
-    </div>
-  );
-}
 
 /**
  * Přihlášení k odesílání poznámek do počítače.

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { closeTopBackLayer, hasInAppHistory, useTrackNavigation } from "@/components/providers/use-app-back";
 import { useStore } from "@/components/providers/store-provider";
 import { useToast } from "@/components/providers/toast-provider";
-import { applyPendingUpdate, checkForUpdate, markBootSucceeded } from "@/lib/live-update";
+import { markBootSucceeded, startAutoUpdate } from "@/lib/live-update";
 import { hideSplash, isNative, registerBackButton, syncStatusBar } from "@/lib/native";
 import { cn } from "@/lib/utils";
 
@@ -38,15 +38,7 @@ function useNativeShell() {
     // Doběhli jsme sem, takže tenhle balík umí naběhnout - značka o rozjetém
     // startu může pryč, jinak by ho příští spuštění vrátilo zpět.
     markBootSucceeded();
-    // Nejdřív nasadit balík stažený minule, teprve pak koukat po novém.
-    // Když se nasadilo, WebView se překresluje a kontrola nemá smysl.
-    void applyPendingUpdate().then((res) => {
-      if (res.applied) return;
-      // Chyba se schválně nezahazuje. Nasazení, které tiše selže, je horší
-      // než žádné: appka běží dál ze staré verze a tváří se, že je aktuální.
-      if (res.error) console.error("Nasazení aktualizace selhalo:", res.error);
-      void checkForUpdate();
-    });
+    return startAutoUpdate();
   }, []);
 
   React.useEffect(() => {

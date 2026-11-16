@@ -1,28 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Download, RefreshCw, Upload } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
-import { AccountSection, ProjectUrlField } from "@/components/account-section";
+import { AccountSection } from "@/components/account-section";
 import { useStore } from "@/components/providers/store-provider";
 import { usePrefs } from "@/components/providers/use-prefs";
 import { useToast } from "@/components/providers/toast-provider";
 import { applySettings, exportBackup, pickBackupFile, restoreBackup } from "@/lib/backup";
 import { formatStamp } from "@/lib/date";
-import {
-  applyPendingUpdate,
-  checkForUpdate,
-  currentBundleVersion,
-  lastApplyError,
-  pendingBundleVersion,
-} from "@/lib/live-update";
-import { isNative } from "@/lib/native";
 import { setPrefs } from "@/lib/prefs";
-import { isSupabaseConfigured, SUPABASE_ANON_KEY } from "@/lib/supabase";
-import { cn, plural } from "@/lib/utils";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import { plural } from "@/lib/utils";
 
 const TAGLINE = "Bez účtu. Bez limitů. Tvoje data zůstávají v telefonu.";
 
@@ -44,96 +36,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-/** Živé aktualizace. V prohlížeči nemá co nasazovat, takže se nezobrazí. */
-function UpdateSection() {
-  const { toast } = useToast();
-  const [checking, setChecking] = React.useState(false);
-  const [applying, setApplying] = React.useState(false);
-  const [current, setCurrent] = React.useState<string | null>(null);
-  const [pending, setPending] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const refresh = React.useCallback(() => {
-    setCurrent(currentBundleVersion());
-    setPending(pendingBundleVersion());
-    setError(lastApplyError());
-  }, []);
-
-  React.useEffect(refresh, [refresh]);
-
-  const check = async () => {
-    setChecking(true);
-    const res = await checkForUpdate();
-    setChecking(false);
-    refresh();
-
-    if (res.kind === "downloaded") {
-      toast({
-        tone: "success",
-        title: `Stažena verze ${res.version}`,
-        description: "Nasadí se při dalším otevření appky.",
-      });
-    } else if (res.kind === "pending") {
-      toast({
-        tone: "warn",
-        title: `Verze ${res.version} čeká na nasazení`,
-        description: res.error
-          ? `Minule to selhalo: ${res.error}`
-          : "Zavři a znovu otevři appku, nebo ťukni na Nasadit teď.",
-      });
-    } else if (res.kind === "up-to-date") {
-      toast({ tone: "info", title: "Máš nejnovější verzi." });
-    } else if (res.kind === "failed") {
-      toast({ tone: "warn", title: "Kontrola selhala", description: res.message });
-    }
-  };
-
-  /**
-   * Ruční nasazení. Normálně se nasazuje samo po startu, ale když to selže,
-   * musí jít zkusit znovu bez vypínání appky - a hlavně musí být vidět proč.
-   */
-  const apply = async () => {
-    setApplying(true);
-    const res = await applyPendingUpdate();
-    setApplying(false);
-    refresh();
-
-    if (res.applied) return; // appka se překresluje, hláška by nebyla k čemu
-    toast({
-      tone: "warn",
-      title: "Nasazení se nepovedlo",
-      description: res.error ?? "Nebylo co nasadit.",
-    });
-  };
-
-  return (
-    <div className="flex flex-col gap-2.5">
-      <p className="text-body-md text-on-surface-variant">
-        Běží verze <span className="tabular">{current ?? "—"}</span>
-        {pending ? (
-          <>
-            {" · "}stažená <span className="tabular">{pending}</span> čeká na nasazení
-          </>
-        ) : null}
-      </p>
-
-      {error ? <p className="text-body-md text-error">Poslední nasazení selhalo: {error}</p> : null}
-
-      <div className="flex flex-wrap gap-2">
-        <Button variant="tonal" size="sm" disabled={checking} onClick={() => void check()}>
-          <RefreshCw className={cn(checking && "animate-spin")} />
-          {checking ? "Hledám…" : "Zkontrolovat aktualizace"}
-        </Button>
-        {pending ? (
-          <Button variant="filled" size="sm" disabled={applying} onClick={() => void apply()}>
-            {applying ? "Nasazuji…" : "Nasadit teď"}
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 export function SettingsDialog({
   open,
   onOpenChange,
@@ -144,14 +46,12 @@ export function SettingsDialog({
   const { state, replace } = useStore();
   const prefs = usePrefs();
   const { toast } = useToast();
-  const [native, setNative] = React.useState(false);
   // Adresa Supabase bydlí v localStorage, při předgenerování stránky není známá.
   const [configured, setConfigured] = React.useState(false);
   const [working, setWorking] = React.useState(false);
   const [confirmRestore, setConfirmRestore] = React.useState(false);
 
   React.useEffect(() => {
-    setNative(isNative());
     setConfigured(isSupabaseConfigured());
   }, []);
 
@@ -189,8 +89,6 @@ export function SettingsDialog({
       setWorking(false);
     }
   };
-
-  const urlField = !configured && SUPABASE_ANON_KEY.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="Nastavení" variant="fullscreen">
@@ -268,19 +166,6 @@ export function SettingsDialog({
             </p>
             <p className="text-body-md text-on-surface-variant">{TAGLINE}</p>
           </div>
-
-          {native || urlField ? (
-            <details className="group rounded-lg bg-surface-container">
-              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 px-4 text-label-lg text-on-surface [&::-webkit-details-marker]:hidden">
-                Pro pokročilé
-                <ChevronDown className="size-5 transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="flex flex-col gap-4 px-4 pb-4">
-                {native ? <UpdateSection /> : null}
-                {urlField ? <ProjectUrlField onSaved={() => setConfigured(isSupabaseConfigured())} /> : null}
-              </div>
-            </details>
-          ) : null}
         </Section>
       </div>
 
