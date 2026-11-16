@@ -16,7 +16,7 @@ import { setPrefs } from "@/lib/prefs";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { plural } from "@/lib/utils";
 
-const TAGLINE = "Bez účtu. Bez limitů. Tvoje data zůstávají v telefonu.";
+const TAGLINE = "Poznámky v telefonu, s účtem i v databázi.";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -149,12 +149,12 @@ export function SettingsDialog({
             </Button>
           </div>
           <p className="text-body-sm text-on-surface-variant">
-            Poznámky jsou jen v tomhle telefonu. Odinstalováním appky zmizí, záloha je jediná pojistka.
+            Přihlášenému se poznámky ukládají i do databáze. Záloha do souboru je pojistka navíc.
           </p>
         </Section>
 
         {configured ? (
-          <Section title="Odeslat do počítače">
+          <Section title="Účet a databáze">
             <AccountSection />
           </Section>
         ) : null}

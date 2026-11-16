@@ -1,85 +1,39 @@
 "use client";
 
 import * as React from "react";
-import { LogOut, Send } from "lucide-react";
+import { LogOut, RefreshCw, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { usePrefs } from "@/components/providers/use-prefs";
 import { useStore } from "@/components/providers/store-provider";
 import { useToast } from "@/components/providers/toast-provider";
-import { setPrefs } from "@/lib/prefs";
-import { liveNotes } from "@/lib/notes";
-import {
-  autoSend,
-  currentAccount,
-  pendingCount,
-  sendAllNotes,
-  signIn,
-  signOut,
-  signUp,
-  type Account,
-} from "@/lib/sync";
+import { syncStatusText, useSyncStatus } from "@/components/sync-status";
+import { currentAccount, signIn, signOut, signUp, type Account } from "@/lib/sync";
 import { isSupabaseConfigured, supabaseUrl } from "@/lib/supabase";
-import { plural } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /**
- * Přihlášení k odesílání poznámek do počítače.
- *
- * Účet je jeden a používá se na obou stranách - v telefonu tady, na počítači
- * ve stahovacím skriptu. Podle něj databáze pozná, čí poznámky jsou; nic
- * jiného než tohle přihlášení je u sebe nedrží.
+ * Účet: stejný jako v MicroWins. Přihlášený telefon si poznámky drží
+ * i v databázi - nové a upravené se ukládají samy, smazané se mažou
+ * a po přeinstalaci nebo na jiném telefonu se stáhnou zpátky.
  */
 export function AccountSection() {
-  const { trashAfterSync } = usePrefs();
   const { toast } = useToast();
+  const { syncNow } = useStore();
+  const status = useSyncStatus();
 
   const [account, setAccount] = React.useState<Account | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [pending, setPending] = React.useState<number | null>(null);
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  // null = neběží; jinak kolik poznámek už odešlo.
-  const [bulk, setBulk] = React.useState<{ done: number; total: number } | null>(null);
-
-  const { state, trash } = useStore();
-  const live = React.useMemo(() => liveNotes(state), [state]);
-
-  const sendAll = async () => {
-    setBulk({ done: 0, total: live.length });
-    const res = await sendAllNotes(live, (done, total) => setBulk({ done, total }));
-    setBulk(null);
-
-    // Úklid až po dojetí celé fronty: mazat pod rukama seznamu, přes který
-    // se právě prochází, by odeslání zamotalo.
-    if (trashAfterSync) for (const id of res.sentIds) trash(id);
-
-    void refresh();
-    toast(
-      res.failed === 0
-        ? {
-            tone: "success",
-            title: `Odesláno ${res.sent} ${plural(res.sent, "poznámka", "poznámky", "poznámek")}`,
-          }
-        : {
-            tone: "warn",
-            title: `Odesláno ${res.sent} z ${res.sent + res.failed}`,
-            description: res.message,
-          },
-    );
-  };
 
   const refresh = React.useCallback(async () => {
     // Bez adresy se na klienta nesmí sáhnout - `createClient` s prázdnou
-    // adresou spadne a shodil by celé Nastavení (I15). Nastavení sekci bez
-    // adresy nezobrazí, tohle je pojistka.
+    // adresou spadne a shodil by celé Nastavení (I15).
     if (!isSupabaseConfigured()) return setLoading(false);
-    const acc = await currentAccount();
-    setAccount(acc);
-    setPending(acc ? await pendingCount() : null);
+    setAccount(await currentAccount());
     setLoading(false);
   }, []);
 
@@ -112,8 +66,9 @@ export function AccountSection() {
     }
 
     setPassword("");
-    // Po přihlášení hned nahrát, co v telefonu je - nečekat na první úpravu.
-    void autoSend(live).then(refresh);
+    // Po přihlášení hned stáhnout poznámky z účtu a nahrát ty z telefonu.
+    syncNow();
+    void refresh();
     toast({ tone: "success", title: "Přihlášeno" });
   };
 
@@ -124,58 +79,32 @@ export function AccountSection() {
           Přihlášen jako <span className="font-medium text-on-surface">{account.email}</span>
         </p>
 
-        <p className="text-body-md text-on-surface-variant">
-          {pending === null
-            ? "Frontu se nepovedlo načíst - jsi online?"
-            : pending === 0
-              ? "Fronta je prázdná, počítač má vše stažené."
-              : `${pending} ${plural(pending, "poznámka čeká", "poznámky čekají", "poznámek čeká")} na stažení do počítače.`}
+        <p className={cn("text-body-md", status.kind === "error" ? "text-error" : "text-on-surface-variant")}>
+          {syncStatusText(status)}
         </p>
 
-        <Switch
-          label="Po odeslání dát poznámku do koše"
-          checked={trashAfterSync}
-          onCheckedChange={(value) => setPrefs({ trashAfterSync: value })}
-        />
+        <p className="text-body-sm text-on-surface-variant">
+          Nové a upravené poznámky se ukládají samy, smazané se smažou i v databázi. Na jiném
+          telefonu nebo po přeinstalaci se po přihlášení stáhnou zpátky.
+        </p>
 
-        {/*
-         * Hromadné odeslání je hlavně pro první přihlášení: v telefonu leží
-         * zápisník, který vznikl dřív než odesílání, a proklikat ho po jedné
-         * poznámce nikdo nechce.
-         */}
-        <div className="flex flex-col gap-2 rounded-lg bg-surface-container p-3">
-          <Button
-            variant="filled"
-            size="sm"
-            className="self-start"
-            disabled={bulk !== null || live.length === 0}
-            onClick={() => void sendAll()}
-          >
-            <Send />
-            {bulk
-              ? `Odesílám ${bulk.done}/${bulk.total}…`
-              : `Odeslat všechny (${live.length})`}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="tonal" size="sm" disabled={status.kind === "syncing"} onClick={syncNow}>
+            <RefreshCw className={cn(status.kind === "syncing" && "animate-spin")} />
+            Synchronizovat teď
           </Button>
-          <p className="text-body-sm text-on-surface-variant">
-            {live.length === 0
-              ? "Zápisník je prázdný, není co odesílat."
-              : "Pošle do fronty všechny poznámky mimo koš, jednu po druhé."}
-          </p>
+          <Button
+            variant="text"
+            size="sm"
+            onClick={async () => {
+              await signOut();
+              void refresh();
+            }}
+          >
+            <LogOut />
+            Odhlásit
+          </Button>
         </div>
-
-        <Button
-          variant="text"
-          size="sm"
-          className="self-start"
-          disabled={bulk !== null}
-          onClick={async () => {
-            await signOut();
-            void refresh();
-          }}
-        >
-          <LogOut />
-          Odhlásit
-        </Button>
       </div>
     );
   }
@@ -183,8 +112,8 @@ export function AccountSection() {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-body-md text-on-surface-variant">
-        Přihlas se stejným účtem jako v MicroWins (účty jsou společné). Každá
-        nová nebo upravená poznámka se pak sama uloží do databáze.
+        Přihlas se stejným účtem jako v MicroWins (účty jsou společné). Poznámky se pak
+        samy ukládají do databáze a po přeinstalaci se stáhnou zpátky.
       </p>
 
       <Field label="E-mail">

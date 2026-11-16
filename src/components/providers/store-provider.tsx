@@ -7,7 +7,7 @@ import { toggleTaskAt } from "@/lib/checklist";
 import { isNative } from "@/lib/native";
 import { getPrefs } from "@/lib/prefs";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { autoSend } from "@/lib/sync";
+import { syncNotes } from "@/lib/sync";
 import * as notes from "@/lib/notes";
 import { EMPTY_STATE, type BetterNotesState, type Note } from "@/lib/types";
 
@@ -51,6 +51,8 @@ export interface StoreApi {
   archiveMany: (ids: string[]) => void;
   /** Zaškrtne úkol na řádku s pozicí `offset`; hotové sjedou dolů podle nastavení. */
   toggleTask: (id: string, offset: number) => void;
+  /** Hned sladí poznámky s databází (po přihlášení). */
+  syncNow: () => void;
 }
 
 const StoreContext = React.createContext<StoreApi | null>(null);
@@ -171,19 +173,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (hydrated) persist.schedule();
   }, [state, hydrated, persist]);
 
-  // Automatické ukládání do databáze: pár sekund po poslední změně, ať se
-  // neposílá každá klávesa. Bez nastaveného Supabase se na klienta nesahá.
-  React.useEffect(() => {
-    if (!hydrated || !isSupabaseConfigured()) return;
-    const timer = window.setTimeout(() => void autoSend(notes.liveNotes(stateRef.current)), AUTO_SEND_DELAY);
-    return () => window.clearTimeout(timer);
-  }, [state, hydrated]);
+  /**
+   * Synchronizace s databází. Stažené změny se zapíšou přímo do stavu - jako
+   * Zpět (`putNotes`), takže stažená poznámka nedostane nové razítko.
+   */
+  const syncNow = React.useCallback(() => {
+    if (!isSupabaseConfigured()) return;
+    void syncNotes(
+      () => stateRef.current.notes,
+      (upsert, remove) =>
+        setState((s) => {
+          const next = notes.putNotes(s, upsert);
+          return remove.length ? { ...next, notes: next.notes.filter((n) => !remove.includes(n.id)) } : next;
+        }),
+    );
+  }, []);
 
-  // Po návratu do appky / obnovení sítě dožene, co předtím neprošlo.
+  // Pár sekund po poslední změně, ať se neposílá každá klávesa.
   React.useEffect(() => {
-    if (!hydrated || !isSupabaseConfigured()) return;
+    if (!hydrated) return;
+    const timer = window.setTimeout(syncNow, AUTO_SEND_DELAY);
+    return () => window.clearTimeout(timer);
+  }, [state, hydrated, syncNow]);
+
+  // Po návratu do appky / obnovení sítě stáhne cizí změny a dožene svoje.
+  React.useEffect(() => {
+    if (!hydrated) return;
     const retry = () => {
-      if (document.visibilityState === "visible") void autoSend(notes.liveNotes(stateRef.current));
+      if (document.visibilityState === "visible") syncNow();
     };
     document.addEventListener("visibilitychange", retry);
     window.addEventListener("online", retry);
@@ -191,7 +208,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", retry);
       window.removeEventListener("online", retry);
     };
-  }, [hydrated]);
+  }, [hydrated, syncNow]);
 
   React.useEffect(() => {
     const onHide = () => {
@@ -290,8 +307,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const api = React.useMemo<StoreApi>(
-    () => ({ state, hydrated, saveFailed, restoredFromMirror, ...actions }),
-    [state, hydrated, saveFailed, restoredFromMirror, actions],
+    () => ({ state, hydrated, saveFailed, restoredFromMirror, syncNow, ...actions }),
+    [state, hydrated, saveFailed, restoredFromMirror, syncNow, actions],
   );
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;

@@ -39,3 +39,6 @@ harness/
 # Dočasná stránka na načtení poznámek do prohlížeče na počítači.
 # poznamky.json obsahuje tvoje poznámky včetně fotek - do repozitáře nepatří.
 /public/
+
+# session of tools/sync-pull.mjs
+.sync-session.json

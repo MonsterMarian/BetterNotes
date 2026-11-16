@@ -11,7 +11,7 @@
  * jestli je počítač zrovna zapnutý, jakou má adresu a co na něm dělá firewall.
  * Poznámka počká ve frontě, dokud si ji `tools/sync-pull.mjs` nevyzvedne.
  */
-import { imageBlob } from "./images";
+import { imageBlob, readImage, storeImage } from "./images";
 import { friendlyError, IMAGES_BUCKET, NOTES_TABLE, supabase } from "./supabase";
 import type { Note } from "./types";
 import { isEmptyNote, noteTitle } from "./notes";
@@ -43,6 +43,14 @@ export async function signUp(email: string, password: string): Promise<string | 
 
 export async function signOut(): Promise<void> {
   await supabase().auth.signOut();
+  // Záznam o sladění patří účtu. Jiný účet by jinak poznámky nedostal, nebo
+  // by mu odešly náhrobky za poznámky, které nikdy neměl.
+  try {
+    localStorage.removeItem(SENT_KEY);
+  } catch {
+    // nic
+  }
+  setStatus(OFF);
 }
 
 /**
@@ -91,6 +99,23 @@ export interface OutboxRow {
    * tu původní verzi už vyzvedl. Jinak by v počítači zůstala stará podoba.
    */
   pulled_at: null;
+  /** Celá poznámka pro ostatní zařízení (obnova po přeinstalaci, koš, archiv). */
+  note: Note;
+  deleted: false;
+  /** Kdy se změna stala - podle toho ostatní zařízení poznají novější verzi. */
+  changed_at: string;
+}
+
+/**
+ * Text bez prvního řádku, když si ho poznámka bez titulku vzala jako název.
+ * Jinak by v počítači stál titulek dvakrát pod sebou ("# slave" a pak "slave").
+ */
+function bodyWithoutTitle(note: Note, title: string): string {
+  if (note.title.trim() || note.day) return note.text;
+  const lines = note.text.split("\n");
+  const first = lines.findIndex((l) => l.trim().length > 0);
+  if (first === -1 || lines[first].replace(/^\s*#{1,3}\s*/, "").trim() !== title) return note.text;
+  return lines.slice(first + 1).join("\n").replace(/^\n+/, "");
 }
 
 /**
@@ -101,10 +126,11 @@ export interface OutboxRow {
  * v takovém případě sáhne po prvním řádku textu.
  */
 export function noteToRow(note: Note, images: string[], now: Date = new Date()): OutboxRow {
+  const title = noteTitle(note);
   return {
     note_id: note.id,
-    title: noteTitle(note),
-    body: note.text,
+    title,
+    body: bodyWithoutTitle(note, title),
     tags: note.tags,
     images,
     tone: note.tone,
@@ -112,6 +138,9 @@ export function noteToRow(note: Note, images: string[], now: Date = new Date()):
     note_updated_at: note.updatedAt,
     sent_at: now.toISOString(),
     pulled_at: null,
+    note,
+    deleted: false,
+    changed_at: now.toISOString(),
   };
 }
 
@@ -136,7 +165,7 @@ function needsMigration(error: unknown): boolean {
  * úpravy nemění, a přepsaný řádek se tváří jako čerstvě odeslaný (`sent_at`
  * na teď, `pulled_at` zpátky na prázdno), takže si počítač stáhne novou podobu.
  */
-export async function sendNote(note: Note): Promise<SyncResult> {
+export async function sendNote(note: Note, now: Date = new Date()): Promise<SyncResult> {
   const db = supabase();
 
   const { data: session } = await db.auth.getSession();
@@ -145,7 +174,7 @@ export async function sendNote(note: Note): Promise<SyncResult> {
 
   try {
     const images = await uploadImages(note, userId);
-    const row = { ...noteToRow(note, images), user_id: userId };
+    const row = { ...noteToRow(note, images, now), user_id: userId };
 
     const { error } = await db.from(NOTES_TABLE).upsert(row, { onConflict: "user_id,note_id" });
     if (!error) return { ok: true, images: images.length };
@@ -154,7 +183,14 @@ export async function sendNote(note: Note): Promise<SyncResult> {
     // než ji neposlat vůbec. Duplikát vznikne, dokud se schéma nedoplní.
     if (!needsMigration(error)) throw error;
 
-    const { note_id: _dropped, pulled_at: _pulled, ...legacy } = row;
+    const {
+      note_id: _dropped,
+      pulled_at: _pulled,
+      note: _note,
+      deleted: _deleted,
+      changed_at: _changed,
+      ...legacy
+    } = row;
     const fallback = await db.from(NOTES_TABLE).insert(legacy);
     if (fallback.error) throw fallback.error;
 
@@ -206,14 +242,110 @@ export async function sendAllNotes(
   return result;
 }
 
-/** Co už je v databázi: id poznámky → `updatedAt` odeslané verze. */
-export type SentLog = Record<string, string>;
+// --- obousměrná synchronizace ------------------------------------------------
 
-const SENT_KEY = "betternotes:sent";
+/** Co databáze o poznámce ví: otisk naposledy sladěné podoby a čas té změny. */
+export interface SyncedEntry {
+  fp: string;
+  at: string;
+}
+export type SentLog = Record<string, SyncedEntry>;
 
-/** Poznámky, jejichž aktuální podoba v databázi ještě není. Prázdné se neposílají. */
+const SENT_KEY = "betternotes:synced";
+
+/** Otisk poznámky. Klíče seřazené: Postgres v `jsonb` pořadí klíčů přehází. */
+export function fingerprint(note: Note): string {
+  return JSON.stringify(note, Object.keys(note).sort());
+}
+
+/** Poznámky (i v koši a archivu), jejichž aktuální podoba v databázi ještě není. */
 export function notesToSend(notes: Note[], sent: SentLog): Note[] {
-  return notes.filter((n) => !isEmptyNote(n) && sent[n.id] !== n.updatedAt);
+  return notes.filter((n) => !isEmptyNote(n) && sent[n.id]?.fp !== fingerprint(n));
+}
+
+/**
+ * Poznámky, které databáze zná, ale v telefonu už nejsou = trvale smazané.
+ * Prázdný zápisník je spíš nepovedené načtení než smazání všeho - pak nic.
+ */
+export function removedIds(notes: Note[], sent: SentLog): string[] {
+  if (notes.length === 0) return [];
+  const present = new Set(notes.map((n) => n.id));
+  return Object.keys(sent).filter((id) => !present.has(id));
+}
+
+export interface RemoteRow {
+  note_id: string;
+  note: Note | null;
+  deleted: boolean;
+  changed_at: string;
+}
+
+export interface PullPlan {
+  upsert: Note[];
+  remove: string[];
+  sent: SentLog;
+}
+
+/**
+ * Co z databáze propsat do telefonu. Rozhoduje čas změny; poznámka upravená
+ * v telefonu a ještě neodeslaná vyhrává (odejde hned potom a přepíše databázi).
+ */
+export function planPull(local: Note[], sent: SentLog, rows: RemoteRow[]): PullPlan {
+  const byId = new Map(local.map((n) => [n.id, n]));
+  const next: SentLog = { ...sent };
+  const upsert: Note[] = [];
+  const remove: string[] = [];
+
+  for (const row of rows) {
+    const id = row.note_id;
+    const prev = sent[id];
+    if (prev && prev.at >= row.changed_at) continue; // tuhle verzi už známe (třeba vlastní)
+
+    const mine = byId.get(id);
+    if (mine && row.note && fingerprint(mine) === fingerprint(row.note)) {
+      next[id] = { fp: fingerprint(mine), at: row.changed_at };
+      continue;
+    }
+    const dirty = mine !== undefined && (!prev || prev.fp !== fingerprint(mine));
+    if (dirty) continue;
+
+    if (row.deleted || !row.note) {
+      if (mine) remove.push(id);
+      delete next[id];
+    } else {
+      upsert.push(row.note);
+      next[id] = { fp: fingerprint(row.note), at: row.changed_at };
+    }
+  }
+  return { upsert, remove, sent: next };
+}
+
+export type SyncStatus =
+  | { kind: "off" }
+  | { kind: "syncing" }
+  | { kind: "ok"; at: string }
+  | { kind: "error"; message: string };
+
+const OFF: SyncStatus = { kind: "off" };
+let status: SyncStatus = OFF;
+const listeners = new Set<() => void>();
+
+function setStatus(next: SyncStatus): void {
+  status = next;
+  for (const l of listeners) l();
+}
+
+export function getSyncStatus(): SyncStatus {
+  return status;
+}
+
+export function getOffStatus(): SyncStatus {
+  return OFF;
+}
+
+export function subscribeSync(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 function readSent(): SentLog {
@@ -224,38 +356,120 @@ function readSent(): SentLog {
   }
 }
 
-let autoRunning = false;
-
-/**
- * Automatické ukládání: pošle do databáze všechno, co se od minula změnilo.
- * Nepřihlášený / offline = tiché nic; zkusí se to při další změně nebo návratu
- * do appky. Do koše nic nedává (`trashAfterSync` platí jen pro ruční odeslání).
- */
-export async function autoSend(notes: Note[]): Promise<void> {
-  if (autoRunning) return;
-  autoRunning = true;
+function writeSent(sent: SentLog): void {
   try {
-    const { data } = await supabase().auth.getSession();
-    if (!data.session) return;
-    const sent = readSent();
-    for (const note of notesToSend(notes, sent)) {
-      const res = await sendNote(note);
-      if (!res.ok) break; // offline nebo výpadek - zbytek počká na další pokus
-      sent[note.id] = note.updatedAt;
-      localStorage.setItem(SENT_KEY, JSON.stringify(sent));
-    }
+    localStorage.setItem(SENT_KEY, JSON.stringify(sent));
   } catch {
-    // shortcut: chyby automatu se nehlásí, ruční "Odeslat všechny" je ukáže
-  } finally {
-    autoRunning = false;
+    // plný telefon - příště se pošle znovu, upsert nic nezdvojí
   }
 }
 
-/** Kolik poznámek čeká, než si je počítač vyzvedne. */
-export async function pendingCount(): Promise<number | null> {
-  const { count, error } = await supabase()
-    .from(NOTES_TABLE)
-    .select("id", { count: "exact", head: true })
-    .is("pulled_at", null);
-  return error ? null : (count ?? 0);
+/** Fotky stažené poznámky, které v telefonu ještě nejsou (nové zařízení, přeinstalace). */
+async function downloadImages(note: Note, userId: string): Promise<void> {
+  for (const name of note.images) {
+    if (await readImage(name)) continue;
+    const { data, error } = await supabase()
+      .storage.from(IMAGES_BUCKET)
+      .download(`${userId}/${note.id}/${name}`);
+    if (error || !data) continue; // chybějící fotka nesmí zastavit text
+    const bytes = new Uint8Array(await data.arrayBuffer());
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    await storeImage(name, btoa(binary));
+  }
 }
+
+let running = false;
+let again = false;
+
+/**
+ * Sladí telefon s databází: nejdřív stáhne cizí změny, pak pošle svoje
+ * (nové, upravené, koš, archiv) a náhrobky trvale smazaných.
+ * Nepřihlášený = nic. Souběžné volání se nezahodí, jen doběhne po tom běžícím.
+ */
+export async function syncNotes(
+  getNotes: () => Note[],
+  apply: (upsert: Note[], remove: string[]) => void,
+): Promise<void> {
+  if (running) {
+    again = true;
+    return;
+  }
+  running = true;
+  try {
+    do {
+      again = false;
+      await syncOnce(getNotes(), apply);
+    } while (again);
+  } finally {
+    running = false;
+  }
+}
+
+async function syncOnce(
+  local: Note[],
+  apply: (upsert: Note[], remove: string[]) => void,
+): Promise<void> {
+  const db = supabase();
+  const { data } = await db.auth.getSession();
+  const userId = data.session?.user.id;
+  if (!userId) return setStatus(OFF);
+
+  setStatus({ kind: "syncing" });
+  try {
+    // shortcut: stahuje se pokaždé celý seznam řádků; při stovkách poznámek přejít na kurzor podle changed_at
+    const { data: rows, error } = await db
+      .from(NOTES_TABLE)
+      .select("note_id, note, deleted, changed_at")
+      .not("changed_at", "is", null);
+    if (error) throw error;
+
+    const plan = planPull(local, readSent(), (rows ?? []) as RemoteRow[]);
+    for (const note of plan.upsert) await downloadImages(note, userId);
+    if (plan.upsert.length > 0 || plan.remove.length > 0) apply(plan.upsert, plan.remove);
+    const sent = plan.sent;
+    writeSent(sent);
+
+    const gone = new Set(plan.remove);
+    const fresh = new Map(plan.upsert.map((n) => [n.id, n]));
+    const merged = [
+      ...plan.upsert.filter((n) => !local.some((l) => l.id === n.id)),
+      ...local.filter((n) => !gone.has(n.id)).map((n) => fresh.get(n.id) ?? n),
+    ];
+
+    for (const note of notesToSend(merged, sent)) {
+      const now = new Date();
+      const res = await sendNote(note, now);
+      if (!res.ok) throw new Error(res.message);
+      sent[note.id] = { fp: fingerprint(note), at: now.toISOString() };
+      writeSent(sent);
+    }
+
+    for (const id of removedIds(merged, sent)) {
+      const now = new Date().toISOString();
+      const { error: delError } = await db.from(NOTES_TABLE).upsert(
+        {
+          user_id: userId,
+          note_id: id,
+          title: "",
+          body: "",
+          note: null,
+          deleted: true,
+          changed_at: now,
+          sent_at: now,
+          // Počítač náhrobek stahovat nemá.
+          pulled_at: now,
+        },
+        { onConflict: "user_id,note_id" },
+      );
+      if (delError) throw delError;
+      delete sent[id];
+      writeSent(sent);
+    }
+
+    setStatus({ kind: "ok", at: new Date().toISOString() });
+  } catch (e) {
+    setStatus({ kind: "error", message: friendlyError(e) });
+  }
+}
+

@@ -20,6 +20,7 @@ import { SwipeToDelete } from "./swipe-to-delete";
 import { BackupBanner } from "@/components/home/backup-banner";
 import { ALL_FILTER, FilterChips, isFiltered, type HomeFilter } from "@/components/home/filter-chips";
 import { HomeMenu } from "@/components/home/home-menu";
+import { SyncIcon } from "@/components/sync-status";
 import { SelectionBar } from "@/components/home/selection-bar";
 import { TemplateSheet } from "@/components/home/template-sheet";
 import { Button } from "@/components/ui/button";
@@ -296,6 +297,7 @@ export function NotesList({ initialTag = null }: { initialTag?: string | null })
         scrolled={scrolled}
         actions={
           <>
+            <SyncIcon />
             <Button
               variant="ghost"
               size="icon"

@@ -121,6 +121,15 @@ export async function saveImage(dataUrl: string): Promise<string> {
   return name;
 }
 
+/** Uloží fotku pod daným jménem (stažená z databáze na jiném zařízení). */
+export async function storeImage(name: string, base64: string): Promise<void> {
+  if (isNative()) {
+    await Filesystem.writeFile({ path: `${DIR}/${name}`, data: base64, directory: Directory.Data, recursive: true });
+  } else {
+    await dbRun("readwrite", (s) => s.put(`data:image/jpeg;base64,${base64}`, name));
+  }
+}
+
 /** Data URL pro `<img src>`. `null` = soubor chybí (smazaný, rozbitá záloha). */
 export async function readImage(name: string): Promise<string | null> {
   try {

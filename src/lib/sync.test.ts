@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { notesToSend, noteToRow, sendAllNotes, sendNote } from "./sync";
+import {
+  fingerprint,
+  notesToSend,
+  noteToRow,
+  planPull,
+  removedIds,
+  sendAllNotes,
+  sendNote,
+  type RemoteRow,
+} from "./sync";
 import type { Note } from "./types";
 
 /*
@@ -19,7 +28,11 @@ let failOn: string | null = null;
 /** Databáze bez migrace: `upsert` na `note_id` v ní ještě nemá o co se opřít. */
 let missingNoteId = false;
 
-vi.mock("./images", () => ({ imageBlob: async () => null }));
+vi.mock("./images", () => ({
+  imageBlob: async () => null,
+  readImage: async () => null,
+  storeImage: async () => {},
+}));
 
 /**
  * Atrapa fronty. `upsert` se chová jako databáze s unikátním indexem:
@@ -67,20 +80,83 @@ function note(patch: Partial<Note> = {}): Note {
 
 const SENT_AT = new Date("2026-03-01T08:00:00.000Z");
 
+const AT = "2026-03-01T08:00:00.000Z";
+const LATER = "2026-03-02T08:00:00.000Z";
+
 describe("notesToSend", () => {
-  it("pošle novou a změněnou, ne už odeslanou ani prázdnou", () => {
+  it("pošle novou a změněnou (i jen přesun do koše), ne sladěnou ani prázdnou", () => {
     const fresh = note({ id: "a", text: "nová" });
     const same = note({ id: "b", text: "beze změny" });
-    const changed = note({ id: "c", text: "upravená", updatedAt: "2026-02-02T00:00:00.000Z" });
+    const trashed = note({ id: "c", text: "smazaná", deletedAt: LATER });
     const empty = note({ id: "d" });
-    const sent = { b: same.updatedAt, c: "2026-02-01T12:00:00.000Z" };
-    expect(notesToSend([fresh, same, changed, empty], sent).map((n) => n.id)).toEqual(["a", "c"]);
+    const sent = {
+      b: { fp: fingerprint(same), at: AT },
+      c: { fp: fingerprint(note({ id: "c", text: "smazaná" })), at: AT },
+    };
+    expect(notesToSend([fresh, same, trashed, empty], sent).map((n) => n.id)).toEqual(["a", "c"]);
+  });
+});
+
+describe("removedIds", () => {
+  it("najde poznámky, které databáze zná a telefon už ne", () => {
+    const sent = { a: { fp: "x", at: AT }, gone: { fp: "y", at: AT } };
+    expect(removedIds([note({ id: "a" })], sent)).toEqual(["gone"]);
+  });
+
+  it("prázdný zápisník (nepovedené načtení) nic nemaže", () => {
+    expect(removedIds([], { a: { fp: "x", at: AT } })).toEqual([]);
+  });
+});
+
+describe("planPull", () => {
+  const row = (n: Note | null, changed_at = LATER, deleted = false): RemoteRow => ({
+    note_id: n?.id ?? "x",
+    note: n,
+    deleted,
+    changed_at,
+  });
+
+  it("nová poznámka z jiného zařízení přibude", () => {
+    const remote = note({ id: "r", text: "z tabletu" });
+    const plan = planPull([], {}, [row(remote)]);
+    expect(plan.upsert).toEqual([remote]);
+    expect(plan.sent.r).toEqual({ fp: fingerprint(remote), at: LATER });
+  });
+
+  it("vlastní odeslanou verzi znovu nepropisuje", () => {
+    const mine = note({ id: "a", text: "moje" });
+    const sent = { a: { fp: fingerprint(mine), at: LATER } };
+    expect(planPull([mine], sent, [row(mine)]).upsert).toEqual([]);
+  });
+
+  it("novější verze z databáze přepíše nezměněnou poznámku", () => {
+    const old = note({ id: "a", text: "stará" });
+    const remote = note({ id: "a", text: "nová" });
+    const plan = planPull([old], { a: { fp: fingerprint(old), at: AT } }, [row(remote)]);
+    expect(plan.upsert).toEqual([remote]);
+  });
+
+  it("neodeslaná úprava v telefonu vyhrává", () => {
+    const edited = note({ id: "a", text: "upravená v telefonu" });
+    const sent = { a: { fp: fingerprint(note({ id: "a", text: "původní" })), at: AT } };
+    const plan = planPull([edited], sent, [row(note({ id: "a", text: "z tabletu" }))]);
+    expect(plan.upsert).toEqual([]);
+  });
+
+  it("náhrobek smaže nezměněnou poznámku a zapomene ji", () => {
+    const mine = note({ id: "a", text: "x" });
+    const plan = planPull([mine], { a: { fp: fingerprint(mine), at: AT } }, [
+      { note_id: "a", note: null, deleted: true, changed_at: LATER },
+    ]);
+    expect(plan.remove).toEqual(["a"]);
+    expect(plan.sent.a).toBeUndefined();
   });
 });
 
 describe("noteToRow", () => {
   it("přenese obsah i časy z telefonu", () => {
-    const row = noteToRow(note({ title: "Nákup", text: "mléko", tags: ["dum"] }), [], SENT_AT);
+    const n = note({ title: "Nákup", text: "mléko", tags: ["dum"] });
+    const row = noteToRow(n, [], SENT_AT);
     expect(row).toEqual({
       note_id: "n1",
       title: "Nákup",
@@ -92,7 +168,20 @@ describe("noteToRow", () => {
       note_updated_at: "2026-02-01T12:00:00.000Z",
       sent_at: "2026-03-01T08:00:00.000Z",
       pulled_at: null,
+      note: n,
+      deleted: false,
+      changed_at: "2026-03-01T08:00:00.000Z",
     });
+  });
+
+  it("řádek, ze kterého je titulek, v textu nezdvojí", () => {
+    const row = noteToRow(note({ text: "slave\n- [ ] kalendář" }), []);
+    expect(row.title).toBe("slave");
+    expect(row.body).toBe("- [ ] kalendář");
+  });
+
+  it("vlastní titulek nechá text celý", () => {
+    expect(noteToRow(note({ title: "Nákup", text: "slave\nx" }), []).body).toBe("slave\nx");
   });
 
   /* Přepsaný řádek se musí tvářit jako čerstvý, jinak by si počítač novou

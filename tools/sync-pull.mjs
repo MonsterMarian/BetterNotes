@@ -12,9 +12,10 @@
  *
  * Údaje se berou z `.env.local` (viz `.env.local.example`).
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import { createClient } from "@supabase/supabase-js";
 
 const SAVE_DIR = path.resolve("prijate-poznamky");
@@ -118,6 +119,12 @@ async function pullOnce(db, userId) {
   let indexChanged = false;
 
   for (const row of rows) {
+    // Smazaná nebo vyhozená do koše poznámka do počítače nepatří - jen se označí.
+    if (row.deleted || row.note?.deletedAt) {
+      await db.from("notes_outbox").update({ pulled_at: new Date().toISOString() }).eq("id", row.id);
+      continue;
+    }
+
     // Poznámka, která už jednou přišla, se přepíše ve své složce. Nová dostane
     // složku podle času odeslání a titulku, jak to bylo vždycky.
     const known = row.note_id ? index[row.note_id] : undefined;
@@ -184,21 +191,59 @@ async function pullOnce(db, userId) {
 
 await loadEnv();
 
+/**
+ * Přihlášení se pamatuje v `.sync-session.json` (mimo git), ne heslo.
+ * Heslo se zeptá jen poprvé, když ho nemá `.env.local`.
+ */
+const SESSION_FILE = path.resolve(".sync-session.json");
+const fileStorage = {
+  read() {
+    try {
+      return JSON.parse(readFileSync(SESSION_FILE, "utf8"));
+    } catch {
+      return {};
+    }
+  },
+  getItem(key) {
+    return this.read()[key] ?? null;
+  },
+  setItem(key, value) {
+    writeFileSync(SESSION_FILE, JSON.stringify({ ...this.read(), [key]: value }));
+  },
+  removeItem(key) {
+    const all = this.read();
+    delete all[key];
+    writeFileSync(SESSION_FILE, JSON.stringify(all));
+  },
+};
+
+async function ask(question, hidden = false) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  if (hidden) rl._writeToOutput = (s) => rl.output.write(s.includes(question) ? s : "");
+  const answer = await rl.question(question);
+  rl.close();
+  if (hidden) process.stdout.write("\n");
+  return answer.trim();
+}
+
 const db = createClient(
-  required("NEXT_PUBLIC_SUPABASE_URL"),
-  required("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-  { auth: { persistSession: false } },
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://mgxbvayypbrrbdzurgcj.supabase.co",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_ejAce0IsaPlrg8CyrzsePQ_LrDDn4ll",
+  { auth: { persistSession: true, autoRefreshToken: true, storage: fileStorage } },
 );
 
-const { data: auth, error: authError } = await db.auth.signInWithPassword({
-  email: required("BETTERNOTES_EMAIL"),
-  password: required("BETTERNOTES_PASSWORD"),
-});
-
-if (authError) {
-  console.error("Přihlášení selhalo:", authError.message);
-  process.exit(1);
+let { data: { session } } = await db.auth.getSession();
+if (!session) {
+  const email = process.env.BETTERNOTES_EMAIL || (await ask("E-mail (stejný jako v appce): "));
+  const password = process.env.BETTERNOTES_PASSWORD || (await ask("Heslo: ", true));
+  const { data, error: authError } = await db.auth.signInWithPassword({ email, password });
+  if (authError) {
+    console.error("Přihlášení selhalo:", authError.message);
+    process.exit(1);
+  }
+  session = data.session;
 }
+const auth = { user: session.user };
 
 await mkdir(SAVE_DIR, { recursive: true });
 console.log(`BetterNotes — přihlášen jako ${auth.user.email}`);

@@ -51,6 +51,13 @@ create table if not exists public.notes_outbox (
 alter table public.notes_outbox add column if not exists tone text not null default 'none';
 alter table public.notes_outbox add column if not exists note_id text;
 
+-- Obousměrná synchronizace: celá poznámka, jak ji zná appka (i koš/archiv),
+-- čas změny z telefonu (rozhoduje, co je novější) a náhrobek po smazání,
+-- aby smazaná poznámka nepřišla zpátky z jiného zařízení.
+alter table public.notes_outbox add column if not exists note jsonb;
+alter table public.notes_outbox add column if not exists deleted boolean not null default false;
+alter table public.notes_outbox add column if not exists changed_at timestamptz;
+
 -- ---------------------------------------------------------------------------
 -- Jedna poznámka = jeden řádek
 -- ---------------------------------------------------------------------------
