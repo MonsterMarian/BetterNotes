@@ -223,7 +223,7 @@ export function AccountSection() {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-body-md text-on-surface-variant">
-        Přihlas se stejným účtem, jaký má stahovací skript na počítači. Poznámka
+        Přihlas se stejným účtem jako v MicroWins (účty jsou společné). Poznámka
         pak počká v databázi, dokud si ji počítač nevyzvedne — nemusí být
         zapnutý ani na stejné Wi-Fi.
       </p>

@@ -15,8 +15,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getPrefs, normalizeSupabaseUrl, setPrefs } from "./prefs";
 
-export const BUILD_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+// Výchozí je sdílený projekt s MicroWins: jeden účet funguje v obou appkách.
+// Publishable klíč je veřejný z definice (data hlídá RLS), smí do repa.
+export const BUILD_SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://mgxbvayypbrrbdzurgcj.supabase.co";
+export const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_ejAce0IsaPlrg8CyrzsePQ_LrDDn4ll";
 
 /**
  * Adresa projektu. Přednost má ta z buildu, ručně zadaná je záchranná brzda
