@@ -111,7 +111,7 @@ export function NoteActionsSheet({
 
   const ids = [note.id];
   const items: ActionItem[] = [
-    { id: "tags", label: "Štítky", icon: <Tags />, onSelect: onOpenTags },
+    { id: "tags", label: "Kategorie", icon: <Tags />, onSelect: onOpenTags },
   ];
   if (tasks.done > 0) {
     items.push(

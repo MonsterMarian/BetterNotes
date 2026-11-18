@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, Camera, Check, EllipsisVertical, ImagePlus, Pin, X } from "lucide-react";
+import { ArrowLeft, Camera, Check, EllipsisVertical, Folder, ImagePlus, Pin, X } from "lucide-react";
 import { VoiceMode, type VoiceModeHandle } from "./voice-mode";
 import { ImageLightbox } from "./image-lightbox";
 import { NoteBody } from "./note-body";
@@ -320,6 +320,10 @@ export function NoteDetail({
         }
         actions={
           <>
+            {/* Kategorie na očích, ne schované v menu - zařazuje se často. */}
+            <Button variant="ghost" size="icon" aria-label="Kategorie" onClick={() => setTagsOpen(true)}>
+              <Folder />
+            </Button>
             <Button
               variant="ghost"
               size="icon"

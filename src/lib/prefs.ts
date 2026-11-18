@@ -7,7 +7,7 @@
  * potřebuje pár komponent naráz. `useSyncExternalStore` si na něj sedne bez
  * dalšího providera.
  */
-import type { SortOrder } from "./notes";
+import { normalizeTag, type SortOrder } from "./notes";
 
 /** Podoba seznamu poznámek. */
 export type ListView = "list" | "grid";
@@ -41,6 +41,8 @@ export interface Prefs {
   lastBackupAt: string;
   /** Kdy uživatel odložil připomínku zálohy (ISO), prázdné = nikdy. */
   backupNudgeDismissedAt: string;
+  /** Kategorie založené ručně - ať vydrží, i když v nich zatím nic není. */
+  categories: string[];
 }
 
 export type EditorFont = "sans" | "serif";
@@ -55,6 +57,7 @@ export const DEFAULT_PREFS: Prefs = {
   editorFont: "sans",
   lastBackupAt: "",
   backupNudgeDismissedAt: "",
+  categories: [],
 };
 
 /**
@@ -97,6 +100,9 @@ export function parsePrefs(raw: unknown): Prefs {
     editorFont: r.editorFont === "serif" ? "serif" : "sans",
     lastBackupAt: isoOrEmpty(r.lastBackupAt),
     backupNudgeDismissedAt: isoOrEmpty(r.backupNudgeDismissedAt),
+    categories: Array.isArray(r.categories)
+      ? [...new Set(r.categories.map((c) => (typeof c === "string" ? normalizeTag(c) : "")).filter(Boolean))]
+      : [],
   };
 }
 

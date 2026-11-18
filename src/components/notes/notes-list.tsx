@@ -162,7 +162,7 @@ export function ListSkeleton() {
 export function NotesList({ initialTag = null }: { initialTag?: string | null }) {
   const router = useRouter();
   const { state, create, dropEmpty } = useStore();
-  const { view, order } = usePrefs();
+  const { view, order, categories } = usePrefs();
   const swipe = useSwipeActions();
   const scrolled = useScrolled();
 
@@ -187,7 +187,11 @@ export function NotesList({ initialTag = null }: { initialTag?: string | null })
    */
   React.useEffect(() => dropEmpty(), [dropEmpty]);
 
-  const tags = React.useMemo(() => tagCounts(state).map((t) => t.tag), [state]);
+  // Používané štítky + ručně založené kategorie, ve kterých zatím nic není.
+  const tags = React.useMemo(() => {
+    const used = tagCounts(state).map((t) => t.tag);
+    return [...used, ...categories.filter((c) => !used.includes(c))];
+  }, [state, categories]);
   const notes = React.useMemo(
     () => visibleNotes(state, { query, order, quick: filter.quick, tone: filter.tone, tag: filter.tag }),
     [state, query, order, filter],
@@ -221,9 +225,11 @@ export function NotesList({ initialTag = null }: { initialTag?: string | null })
   const open = (note: Note, params: string) =>
     router.push(`/note/?id=${encodeURIComponent(note.id)}${params}`);
 
+  // Nová poznámka v otevřené kategorii do ní rovnou patří.
   const newNote = (patch?: Partial<Note>, params = "&new=1") => {
     haptic("tick");
-    open(create(patch), params);
+    const tags = filter.tag ? [...new Set([...(patch?.tags ?? []), filter.tag])] : patch?.tags;
+    open(create({ ...patch, ...(tags ? { tags } : {}) }), params);
   };
 
   const openDaily = () => {
@@ -254,11 +260,27 @@ export function NotesList({ initialTag = null }: { initialTag?: string | null })
       empty = (
         <EmptyState
           shape="circle"
-          title={filter.tag ? `Zatím nic s #${filter.tag}.` : "Tady zatím nic není."}
+          title={filter.tag ? `V kategorii ${filter.tag} zatím nic není.` : "Tady zatím nic není."}
           actions={
-            <Button variant="tonal" onClick={() => setFilter(ALL_FILTER)}>
-              Zobrazit vše
-            </Button>
+            <>
+              <Button variant="tonal" onClick={() => newNote()}>
+                Nová poznámka
+              </Button>
+              {filter.tag && categories.includes(filter.tag) ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setPrefs({ categories: categories.filter((c) => c !== filter.tag) });
+                    setFilter(ALL_FILTER);
+                  }}
+                >
+                  Smazat kategorii
+                </Button>
+              ) : null}
+              <Button variant="tonal" onClick={() => setFilter(ALL_FILTER)}>
+                Zobrazit vše
+              </Button>
+            </>
           }
         />
       );

@@ -37,19 +37,22 @@ export function FloatingToolbar({
   className?: string;
 }) {
   const keyboard = useKeyboardHeight();
+  const ref = React.useRef<HTMLDivElement>(null);
 
   // Prohlížeč posouvá kurzor do výhledu podle viewportu a o liště neví -
-  // poslední řádek by skončil pod ní (64 px + 12 odsazení + rezerva).
+  // poslední řádek by skončil pod ní (výška lišty + 12 odsazení + rezerva).
+  // `className` mění výšku (rozbalené formátování), proto je v závislostech.
   React.useEffect(() => {
     const root = document.documentElement;
-    root.style.scrollPaddingBottom = `${keyboard + 88}px`;
+    root.style.scrollPaddingBottom = `${keyboard + (ref.current?.offsetHeight ?? 64) + 24}px`;
     return () => {
       root.style.scrollPaddingBottom = "";
     };
-  }, [keyboard]);
+  }, [keyboard, className]);
 
   return (
     <div
+      ref={ref}
       role="toolbar"
       style={{ bottom: `calc(max(var(--mw-safe-bottom), ${keyboard}px) + 12px + var(--snackbar-h, 0px))` }}
       className={cn(
@@ -94,8 +97,4 @@ export function ToolbarButton({
       {icon}
     </button>
   );
-}
-
-export function ToolbarDivider() {
-  return <span role="separator" aria-orientation="vertical" className="mx-1 h-8 w-px shrink-0 bg-current opacity-20" />;
 }

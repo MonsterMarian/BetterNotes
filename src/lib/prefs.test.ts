@@ -80,3 +80,16 @@ describe("nová nastavení", () => {
     ).toMatchObject({ haptics: false, sinkChecked: false, editorFont: "serif", lastBackupAt: "2026-11-01T10:00:00.000Z" });
   });
 });
+describe("kategorie", () => {
+  it("srovná je jako štítky, zahodí prázdné, nesmysly a duplicity", () => {
+    expect(parsePrefs({ categories: ["#Kodex", "music", "kodex", "  ", 5, null] }).categories).toEqual([
+      "kodex",
+      "music",
+    ]);
+  });
+
+  it("bez seznamu nebo s nesmyslem je prázdno", () => {
+    expect(parsePrefs({}).categories).toEqual([]);
+    expect(parsePrefs({ categories: "kodex" }).categories).toEqual([]);
+  });
+});
