@@ -43,9 +43,14 @@ export interface Prefs {
   backupNudgeDismissedAt: string;
   /** Kategorie založené ručně - ať vydrží, i když v nich zatím nic není. */
   categories: string[];
+  /** Rozpoznávač hlasu: offline CzechSpeech (Moravian AI) nebo systémový Android. */
+  voiceEngine: VoiceEngine;
+  /** Rozlišovat mluvčí (Osoba 1 / Osoba 2), pokud mluví více lidí. */
+  voiceDiarize: boolean;
 }
 
 export type EditorFont = "sans" | "serif";
+export type VoiceEngine = "czechspeech" | "system";
 
 export const DEFAULT_PREFS: Prefs = {
   view: "list",
@@ -58,6 +63,8 @@ export const DEFAULT_PREFS: Prefs = {
   lastBackupAt: "",
   backupNudgeDismissedAt: "",
   categories: [],
+  voiceEngine: "czechspeech",
+  voiceDiarize: true,
 };
 
 /**
@@ -103,6 +110,8 @@ export function parsePrefs(raw: unknown): Prefs {
     categories: Array.isArray(r.categories)
       ? [...new Set(r.categories.map((c) => (typeof c === "string" ? normalizeTag(c) : "")).filter(Boolean))]
       : [],
+    voiceEngine: r.voiceEngine === "system" ? "system" : "czechspeech",
+    voiceDiarize: typeof r.voiceDiarize === "boolean" ? r.voiceDiarize : DEFAULT_PREFS.voiceDiarize,
   };
 }
 

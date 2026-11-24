@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 // Minuty od epochy: každý build je vyšší než ten předchozí, takže Android
 // instalaci bere jako aktualizaci a nechá data být. Ručně psané číslo se
@@ -23,6 +24,10 @@ android {
         versionCode buildNumber
         versionName buildStamp
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            // CzechSpeech i sherpa-onnx běží na 64-bit Androidu; zbytek ABI by jen nafoukl APK.
+            abiFilters 'arm64-v8a'
+        }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -43,6 +48,14 @@ android {
             enableV2Signing true
             enableV3Signing true
         }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = '21'
     }
 
     buildTypes {
@@ -68,8 +81,26 @@ repositories {
     }
 }
 
+def sherpaOnnxAar = file('libs/sherpa-onnx-static-link-onnxruntime-2.0.3.aar')
+tasks.register('ensureSherpaOnnxAar') {
+    doLast {
+        if (!sherpaOnnxAar.exists()) {
+            sherpaOnnxAar.parentFile.mkdirs()
+            def url = new URL('https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.3/sherpa-onnx-static-link-onnxruntime-2.0.3.aar')
+            logger.lifecycle("Stahuji sherpa-onnx AAR: ${url}")
+            url.withInputStream { input ->
+                sherpaOnnxAar.withOutputStream { output -> output << input }
+            }
+        }
+    }
+}
+preBuild.dependsOn(ensureSherpaOnnxAar)
+
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation files(sherpaOnnxAar)
+    implementation 'ai.moravian:czechspeech-android:0.3.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"

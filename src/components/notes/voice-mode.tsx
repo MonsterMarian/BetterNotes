@@ -2,14 +2,22 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { CircleHelp } from "lucide-react";
+import { CircleHelp, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { FloatingToolbar, ToolbarButton } from "@/components/ui/floating-toolbar";
 import { useBackLayer } from "@/components/providers/use-app-back";
+import { usePrefs } from "@/components/providers/use-prefs";
 import { useToast } from "@/components/providers/toast-provider";
-import { startDictation, type DictationStart } from "@/lib/dictation";
+import {
+  cancelCzechVoiceDownload,
+  downloadCzechVoiceModels,
+  type CzechVoiceProgressEvent,
+} from "@/lib/czech-voice";
+import { utteranceGap } from "@/lib/diarization";
+import { startDictation, type DictationActivity, type DictationStart } from "@/lib/dictation";
 import { haptic } from "@/lib/native";
+import { setPrefs } from "@/lib/prefs";
 import {
   startsSentence,
   transcribe,
@@ -68,21 +76,28 @@ export function VoiceMode({
   ref?: React.Ref<VoiceModeHandle>;
 }) {
   const { toast } = useToast();
+  const prefs = usePrefs();
   const [listening, setListeningState] = React.useState(false);
   const [caps, setCaps] = React.useState<CapsMode>("none");
+  const [activity, setActivity] = React.useState<DictationActivity>("listening");
+  const [speakerCount, setSpeakerCount] = React.useState(0);
+  const [activeSpeaker, setActiveSpeaker] = React.useState<number | null>(null);
   /** Poslední napsaná slova - zpětná vazba, když je poznámka odscrollovaná. */
   const [heard, setHeard] = React.useState("");
   /** Počítadlo přepisů - sloupečky se hýbou s každým slovem, není to měřič hlasitosti. */
   const [pulse, setPulse] = React.useState(0);
   const [active, setActive] = React.useState(false);
   const [helpOpen, setHelpOpen] = React.useState(false);
+  const [downloadOpen, setDownloadOpen] = React.useState(false);
+  const [downloading, setDownloading] = React.useState(false);
+  const [downloadProgress, setDownloadProgress] = React.useState<CzechVoiceProgressEvent | null>(null);
   const [mounted, setMounted] = React.useState(false);
   const session = React.useRef<DictationStart | null>(null);
   const idle = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Text a místo vložení zmrazené při spuštění - viz komentář u komponenty. */
   const base = React.useRef<{ text: string; at: number }>({ text: "", at: 0 });
-  const latestProps = React.useRef({ text, onChange, onListeningChange });
-  latestProps.current = { text, onChange, onListeningChange };
+  const latestProps = React.useRef({ text, onChange, onListeningChange, prefs });
+  latestProps.current = { text, onChange, onListeningChange, prefs };
 
   const setListening = React.useCallback((value: boolean) => {
     setListeningState(value);
@@ -117,70 +132,149 @@ export function VoiceMode({
     session.current = null;
     setListening(false);
     setCaps("none");
+    setActivity("listening");
+    setSpeakerCount(0);
+    setActiveSpeaker(null);
     if (wasRunning) haptic("success");
   }, [setListening]);
 
   useBackLayer(listening, stop);
 
-  const start = React.useCallback(async () => {
-    const currentText = latestProps.current.text;
-    const currentAt = caretRef.current;
-    const cut = currentAt === null || currentAt < 0 || currentAt > currentText.length ? currentText.length : currentAt;
-    base.current = { text: currentText, at: cut };
-    setHeard("");
-    setCaps("none");
+  const startWith = React.useCallback(
+    async (engineOverride?: "czechspeech" | "system") => {
+      const currentText = latestProps.current.text;
+      const currentAt = caretRef.current;
+      const cut = currentAt === null || currentAt < 0 || currentAt > currentText.length ? currentText.length : currentAt;
+      base.current = { text: currentText, at: cut };
+      setHeard("");
+      setCaps("none");
+      setActivity("listening");
+      setSpeakerCount(0);
+      setActiveSpeaker(null);
 
-    const res = await startDictation({
-      onTranscript: (spoken) => {
-        const { text: original, at: cursor } = base.current;
-        const head = original.slice(0, cursor);
-        const tail = original.slice(cursor);
-        const written = transcribe(spoken, { sentenceStart: startsSentence(head) });
-        // Mezera před diktátem, aby se nová věta nenalepila na předchozí slovo.
-        const gap = head && written.text && !/\s$/.test(head) ? " " : "";
-        latestProps.current.onChange(`${head}${gap}${written.text}${tail}`);
-        setCaps(written.caps);
-        setHeard(written.text);
-        setPulse((p) => p + 1);
-        setActive(true);
-        if (idle.current) clearTimeout(idle.current);
-        idle.current = setTimeout(() => setActive(false), PULSE_MS);
-        // „Konec diktování" - řečený příkaz vypne mikrofon, ať se nemusí sahat
-        // na telefon uprostřed věty.
-        if (written.stop) stop();
-      },
-      onEnd: (reason, message) => {
-        session.current = null;
-        setListening(false);
-        setCaps("none");
-        if (!reason) {
-          // Vypnutí po dlouhém tichu - bez hlášky by to vypadalo jako porucha.
-          if (message) toast({ title: "Diktování skončilo", description: message });
+      const { voiceEngine, voiceDiarize } = latestProps.current.prefs;
+      const res = await startDictation(
+        {
+          onTranscript: (spoken, meta) => {
+            const { text: original, at: cursor } = base.current;
+            const head = original.slice(0, cursor);
+            const tail = original.slice(cursor);
+
+            if (meta?.formatted) {
+              const multi = meta.speakerCount > 1;
+              const gap = utteranceGap(head, spoken, multi);
+              latestProps.current.onChange(`${head}${gap}${spoken}${tail}`);
+              setSpeakerCount(meta.speakerCount);
+              setActiveSpeaker(meta.activeSpeaker);
+              setHeard(spoken);
+            } else {
+              const written = transcribe(spoken, { sentenceStart: startsSentence(head) });
+              // Mezera před diktátem, aby se nová věta nenalepila na předchozí slovo.
+              const gap = head && written.text && !/\s$/.test(head) ? " " : "";
+              latestProps.current.onChange(`${head}${gap}${written.text}${tail}`);
+              setCaps(written.caps);
+              setHeard(written.text);
+              // „Konec diktování" - řečený příkaz vypne mikrofon, ať se nemusí sahat
+              // na telefon uprostřed věty.
+              if (written.stop) stop();
+            }
+
+            setPulse((p) => p + 1);
+            setActive(true);
+            if (idle.current) clearTimeout(idle.current);
+            idle.current = setTimeout(() => setActive(false), PULSE_MS);
+          },
+          onActivity: (next) => {
+            setActivity(next);
+            if (next === "speaking" || next === "recognizing") {
+              setPulse((p) => p + 1);
+              setActive(true);
+            } else {
+              setActive(false);
+            }
+          },
+          onEnd: (reason, message) => {
+            session.current = null;
+            setListening(false);
+            setCaps("none");
+            setActivity("listening");
+            setSpeakerCount(0);
+            setActiveSpeaker(null);
+            if (!reason) {
+              // Vypnutí po dlouhém tichu - bez hlášky by to vypadalo jako porucha.
+              if (message) toast({ title: "Diktování skončilo", description: message });
+              return;
+            }
+            haptic("error");
+            toast({
+              tone: "warn",
+              title: reason === "denied" ? "Mikrofon není povolený" : "Diktování skončilo",
+              description: message,
+            });
+          },
+        },
+        {
+          engine: engineOverride ?? voiceEngine,
+          diarize: voiceDiarize,
+        },
+      );
+
+      if (!res.ok) {
+        if (res.reason === "model_missing") {
+          setDownloadProgress(null);
+          setDownloadOpen(true);
           return;
         }
         haptic("error");
         toast({
           tone: "warn",
-          title: reason === "denied" ? "Mikrofon není povolený" : "Diktování skončilo",
-          description: message,
+          title: res.reason === "denied" ? "Mikrofon není povolený" : "Diktování nejde spustit",
+          description: res.message,
         });
-      },
-    });
+        return;
+      }
 
-    if (!res.ok) {
-      haptic("error");
+      haptic("press");
+      session.current = res;
+      setListening(true);
+    },
+    [stop, setListening, toast, caretRef],
+  );
+
+  const start = React.useCallback(() => startWith(), [startWith]);
+
+  const handleDownloadModels = async () => {
+    setDownloading(true);
+    setDownloadProgress(null);
+    try {
+      await downloadCzechVoiceModels((ev) => setDownloadProgress(ev));
+      setDownloadOpen(false);
+      toast({ tone: "success", title: "Český hlasový model je připravený" });
+      await startWith("czechspeech");
+    } catch (e) {
       toast({
         tone: "warn",
-        title: res.reason === "denied" ? "Mikrofon není povolený" : "Diktování nejde spustit",
-        description: res.message,
+        title: "Stahování modelu selhalo",
+        description: String(e).slice(0, 140),
       });
-      return;
+    } finally {
+      setDownloading(false);
     }
+  };
 
-    haptic("press");
-    session.current = res;
-    setListening(true);
-  }, [stop, setListening, toast, caretRef]);
+  const handleCancelDownload = async () => {
+    if (downloading) {
+      await cancelCzechVoiceDownload();
+      setDownloading(false);
+    }
+    setDownloadOpen(false);
+  };
+
+  const handleUseSystemFallback = async () => {
+    setPrefs({ voiceEngine: "system" });
+    setDownloadOpen(false);
+    await startWith("system");
+  };
 
   const toggle = React.useCallback(() => {
     if (listening) stop();
@@ -228,7 +322,16 @@ export function VoiceMode({
 
                 <div className="flex min-w-0 max-w-64 flex-1 flex-col text-on-primary-container">
                   <p className="flex items-center gap-2 text-label-md">
-                    Poslouchám…
+                    {activity === "recognizing"
+                      ? "Přepisuji…"
+                      : activity === "speaking"
+                        ? "Slyším řeč…"
+                        : "Poslouchám…"}
+                    {speakerCount > 1 && activeSpeaker ? (
+                      <span className="rounded-full bg-highlight px-2 text-label-sm text-on-highlight">
+                        Osoba {activeSpeaker}
+                      </span>
+                    ) : null}
                     {caps !== "none" ? (
                       <span className="rounded-full bg-highlight px-2 text-label-sm text-on-highlight">
                         {caps === "all" ? "VELKÁ PÍSMENA" : "Velké písmeno"}
@@ -269,6 +372,48 @@ export function VoiceMode({
             </div>
           ))}
         </div>
+      </Dialog>
+      <Dialog
+        open={downloadOpen}
+        onOpenChange={(open) => {
+          if (!open) void handleCancelDownload();
+        }}
+        variant="center"
+        title="Offline český model (CzechSpeech)"
+        description="Pro přesnou češtinu a rozlišování mluvčích (Osoba 1 / Osoba 2) bez internetu je potřeba jednou stáhnout modely (~500 MB)."
+        footer={
+          downloading ? (
+            <Button variant="text" onClick={() => void handleCancelDownload()}>
+              Zrušit stahování
+            </Button>
+          ) : (
+            <>
+              <Button variant="text" onClick={() => void handleUseSystemFallback()}>
+                Použít systémový
+              </Button>
+              <Button variant="filled" onClick={() => void handleDownloadModels()}>
+                <Download />
+                Stáhnout (~500 MB)
+              </Button>
+            </>
+          )
+        }
+      >
+        {downloading ? (
+          <div className="flex flex-col gap-2 py-2">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-container-highest">
+              <div
+                className="h-full bg-primary transition-[width] duration-200"
+                style={{ width: `${downloadProgress?.percent ?? 0}%` }}
+              />
+            </div>
+            <p className="text-body-sm text-on-surface-variant">
+              {downloadProgress
+                ? `Stahuji (${downloadProgress.percent} %, ${Math.round(downloadProgress.doneBytes / 1048576)} / ${Math.round(downloadProgress.totalBytes / 1048576)} MB)…`
+                : "Připravuji stahování…"}
+            </p>
+          </div>
+        ) : null}
       </Dialog>
     </>
   );

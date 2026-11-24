@@ -1,5 +1,6 @@
 ext {
-    minSdkVersion = 24
+    // CzechSpeech SDK vyžaduje Android 8.0+ (API 26) a 64-bit arm64-v8a.
+    minSdkVersion = 26
     // compileSdk musí zůstat 36 - androidx 1.11 nižší nepustí.
     // targetSdk je ale 35: Android 16 je čerstvý a cílem je, aby se appka
     // nainstalovala i na starší telefon.

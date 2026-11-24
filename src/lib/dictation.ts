@@ -18,7 +18,11 @@
  * není pauza v řeči, ale porucha.
  */
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
+import type { PluginListenerHandle } from "@capacitor/core";
+import { CzechVoice, getCzechVoiceStatus, hasCzechVoicePlugin } from "./czech-voice";
+import { formatUtterances, type Utterance } from "./diarization";
 import { isNative } from "./native";
+import type { VoiceEngine } from "./prefs";
 
 /** Čeština - appka je česká a přepínat jazyk diktátu není co řešit. */
 const LANGUAGE = "cs-CZ";
@@ -42,19 +46,42 @@ const FINAL_WAIT_MS = 1200;
 /** Jak často se ověřuje, že rozpoznávač opravdu poslouchá. */
 const WATCHDOG_MS = 1000;
 
-export type DictationFailure = "denied" | "unavailable" | "error";
+export type DictationFailure = "denied" | "unavailable" | "error" | "model_missing";
+
+export interface TranscriptMeta {
+  /**
+   * True pro CzechSpeech, který už vrací hotovou češtinu s interpunkcí a
+   * velkými písmeny (nebo bloky „Osoba 1:“ / „Osoba 2:“).
+   */
+  formatted: boolean;
+  /** Kolik různých mluvčích bylo v relaci rozpoznáno (0/1 = jeden člověk). */
+  speakerCount: number;
+  /** Aktivní mluvčí (1, 2, …), pokud mluví více lidí. */
+  activeSpeaker: number | null;
+}
+
+export type DictationActivity = "listening" | "speaking" | "recognizing";
 
 export interface DictationHandlers {
-  /** Celý přepis od spuštění. Přichází při každém novém slově. */
-  onTranscript: (spoken: string) => void;
+  /** Celý přepis od spuštění. Přichází při každém novém slově nebo promluvě. */
+  onTranscript: (spoken: string, meta?: TranscriptMeta) => void;
+  /** Průběžný stav nativního offline modelu (poslouchá / mluví / přepisuje). */
+  onActivity?: (activity: DictationActivity) => void;
   /** Poslouchání skončilo. `reason` je vyplněné, jen když to skončilo špatně. */
   onEnd: (reason?: DictationFailure, message?: string) => void;
+}
+
+export interface DictationOptions {
+  engine?: VoiceEngine;
+  diarize?: boolean;
 }
 
 export interface DictationStart {
   ok: boolean;
   reason?: DictationFailure;
   message?: string;
+  /** Jaký engine skutečně běží. */
+  engine?: VoiceEngine;
   /** Ukončí poslouchání. U neúspěšného startu chybí. */
   stop?: () => void;
 }
@@ -87,8 +114,110 @@ function join(before: string, next: string): string {
   return `${before} ${next}`;
 }
 
-export async function startDictation(handlers: DictationHandlers): Promise<DictationStart> {
-  return isNative() ? startNative(handlers) : startWeb(handlers);
+export async function startDictation(
+  handlers: DictationHandlers,
+  options: DictationOptions = {},
+): Promise<DictationStart> {
+  if (!isNative()) return startWeb(handlers);
+  const wantCzech = (options.engine ?? "czechspeech") === "czechspeech";
+  if (wantCzech && hasCzechVoicePlugin()) {
+    const status = await getCzechVoiceStatus();
+    if (status.available) {
+      return startCzechVoice(handlers, options.diarize ?? true);
+    }
+  }
+  return startNative(handlers);
+}
+
+async function startCzechVoice(handlers: DictationHandlers, diarize: boolean): Promise<DictationStart> {
+  const handles: PluginListenerHandle[] = [];
+  const utterances: Utterance[] = [];
+  let done = false;
+
+  const cleanup = async () => {
+    while (handles.length > 0) {
+      const h = handles.pop();
+      try {
+        await h?.remove();
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const finish = (reason?: DictationFailure, message?: string) => {
+    if (done) return;
+    done = true;
+    void cleanup();
+    handlers.onEnd(reason, message);
+  };
+
+  try {
+    handles.push(
+      await CzechVoice.addListener("utterance", (ev) => {
+        if (done) return;
+        utterances.push({ id: ev.id, text: ev.text, speaker: ev.speaker ?? null });
+        const formatted = formatUtterances(utterances);
+        if (!formatted.text) return;
+        handlers.onTranscript(formatted.text, {
+          formatted: true,
+          speakerCount: formatted.speakerCount,
+          activeSpeaker: formatted.activeSpeaker,
+        });
+      }),
+    );
+
+    handles.push(
+      await CzechVoice.addListener("state", (ev) => {
+        if (!done) handlers.onActivity?.(ev.state);
+      }),
+    );
+
+    handles.push(
+      await CzechVoice.addListener("end", (ev) => {
+        if (ev.reason === "error") {
+          finish("error", ev.message ?? "Diktování skončilo chybou.");
+        } else {
+          finish(undefined, ev.message);
+        }
+      }),
+    );
+
+    await CzechVoice.start({ diarize });
+
+    return {
+      ok: true,
+      engine: "czechspeech",
+      stop: () => {
+        void CzechVoice.stop().catch(() => {
+          finish();
+        });
+      },
+    };
+  } catch (e: unknown) {
+    await cleanup();
+    const err = e as { code?: string; message?: string } | null;
+    const code = String(err?.code ?? "");
+    const message = String(err?.message ?? e);
+    if (code === "model_missing" || /model_missing|není stažený/i.test(message)) {
+      return {
+        ok: false,
+        reason: "model_missing",
+        message: "Offline český model CzechSpeech (~500 MB) je potřeba jednou stáhnout.",
+      };
+    }
+    if (code === "denied" || /permission|denied/i.test(message)) {
+      return {
+        ok: false,
+        reason: "denied",
+        message: "Povol ho v Nastavení telefonu → Aplikace → BetterNotes → Oprávnění → Mikrofon.",
+      };
+    }
+    if (code === "unavailable") {
+      return { ok: false, reason: "unavailable", message: message.slice(0, 140) };
+    }
+    return { ok: false, reason: "error", message: message.slice(0, 140) };
+  }
 }
 
 async function startNative(handlers: DictationHandlers): Promise<DictationStart> {

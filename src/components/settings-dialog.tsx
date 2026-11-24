@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Upload } from "lucide-react";
+import { Download, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Segmented } from "@/components/ui/segmented";
@@ -11,6 +11,15 @@ import { useStore } from "@/components/providers/store-provider";
 import { usePrefs } from "@/components/providers/use-prefs";
 import { useToast } from "@/components/providers/toast-provider";
 import { applySettings, exportBackup, pickBackupFile, restoreBackup } from "@/lib/backup";
+import {
+  cancelCzechVoiceDownload,
+  deleteCzechVoiceModels,
+  downloadCzechVoiceModels,
+  getCzechVoiceStatus,
+  hasCzechVoicePlugin,
+  type CzechVoiceProgressEvent,
+  type CzechVoiceStatus,
+} from "@/lib/czech-voice";
 import { formatStamp } from "@/lib/date";
 import { setPrefs } from "@/lib/prefs";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -50,10 +59,62 @@ export function SettingsDialog({
   const [configured, setConfigured] = React.useState(false);
   const [working, setWorking] = React.useState(false);
   const [confirmRestore, setConfirmRestore] = React.useState(false);
+  const [voicePlugin, setVoicePlugin] = React.useState(false);
+  const [voiceStatus, setVoiceStatus] = React.useState<CzechVoiceStatus | null>(null);
+  const [voiceDownloading, setVoiceDownloading] = React.useState(false);
+  const [voiceProgress, setVoiceProgress] = React.useState<CzechVoiceProgressEvent | null>(null);
+
+  const refreshVoiceStatus = React.useCallback(async () => {
+    const has = hasCzechVoicePlugin();
+    setVoicePlugin(has);
+    if (!has) return;
+    setVoiceStatus(await getCzechVoiceStatus());
+  }, []);
 
   React.useEffect(() => {
     setConfigured(isSupabaseConfigured());
   }, []);
+
+  React.useEffect(() => {
+    if (open) void refreshVoiceStatus();
+  }, [open, refreshVoiceStatus]);
+
+  const doDownloadVoice = async () => {
+    setVoiceDownloading(true);
+    setVoiceProgress(null);
+    try {
+      await downloadCzechVoiceModels((ev) => setVoiceProgress(ev));
+      await refreshVoiceStatus();
+      toast({ tone: "success", title: "Offline český model je stažený" });
+    } catch (e) {
+      toast({
+        tone: "warn",
+        title: "Stahování modelu selhalo",
+        description: String(e).slice(0, 120),
+      });
+    } finally {
+      setVoiceDownloading(false);
+    }
+  };
+
+  const doCancelVoiceDownload = async () => {
+    await cancelCzechVoiceDownload();
+    setVoiceDownloading(false);
+    await refreshVoiceStatus();
+  };
+
+  const doDeleteVoice = async () => {
+    setWorking(true);
+    try {
+      await deleteCzechVoiceModels();
+      await refreshVoiceStatus();
+      toast({ title: "Offline modely smazány" });
+    } catch (e) {
+      toast({ tone: "warn", title: "Smazání selhalo", description: String(e).slice(0, 120) });
+    } finally {
+      setWorking(false);
+    }
+  };
 
   const doExport = async () => {
     setWorking(true);
@@ -131,6 +192,78 @@ export function SettingsDialog({
             onCheckedChange={(haptics) => setPrefs({ haptics })}
           />
         </Section>
+
+        {voicePlugin ? (
+          <Section title="Diktování">
+            <Row label="Rozpoznávání řeči">
+              <Segmented
+                aria-label="Rozpoznávání řeči"
+                value={prefs.voiceEngine}
+                options={[
+                  { id: "czechspeech", label: "CzechSpeech (offline)" },
+                  { id: "system", label: "Systémový" },
+                ]}
+                onChange={(voiceEngine) => setPrefs({ voiceEngine })}
+              />
+            </Row>
+            <Switch
+              label="Rozlišovat mluvčí (Osoba 1, Osoba 2)"
+              description="Když mluví více lidí, automaticky je v poznámce oddělí"
+              checked={prefs.voiceDiarize}
+              onCheckedChange={(voiceDiarize) => setPrefs({ voiceDiarize })}
+            />
+            {voiceStatus?.available ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-body-sm text-on-surface-variant">
+                  {voiceStatus.diarizationReady
+                    ? "Offline český model (Moravian AI) i rozlišování mluvčích jsou stažené v telefonu."
+                    : voiceStatus.ready
+                      ? "CzechSpeech je stažený, chybí model pro rozlišování mluvčích."
+                      : "Modely zatím nejsou stažené (~500 MB, běží plně offline bez internetu)."}
+                </p>
+                {voiceDownloading ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-surface-container-highest">
+                      <div
+                        className="h-full bg-primary transition-[width] duration-200"
+                        style={{ width: `${voiceProgress?.percent ?? 0}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-body-sm text-on-surface-variant">
+                        {voiceProgress
+                          ? `${voiceProgress.percent} % (${Math.round(voiceProgress.doneBytes / 1048576)} / ${Math.round(voiceProgress.totalBytes / 1048576)} MB)`
+                          : "Připravuji…"}
+                      </span>
+                      <Button variant="text" onClick={() => void doCancelVoiceDownload()}>
+                        Zrušit
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {!voiceStatus.diarizationReady ? (
+                      <Button variant="filled" disabled={working} onClick={() => void doDownloadVoice()}>
+                        <Download />
+                        Stáhnout modely (~500 MB)
+                      </Button>
+                    ) : null}
+                    {voiceStatus.czechSpeechDownloaded || voiceStatus.vadDownloaded || voiceStatus.speakerDownloaded ? (
+                      <Button variant="outline" disabled={working} onClick={() => void doDeleteVoice()}>
+                        <Trash2 />
+                        Smazat modely
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-body-sm text-on-surface-variant">
+                Offline CzechSpeech vyžaduje 64bitový Android (arm64-v8a).
+              </p>
+            )}
+          </Section>
+        ) : null}
 
         <Section title="Záloha">
           <p className="text-body-md text-on-surface-variant">
